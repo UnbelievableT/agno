@@ -234,3 +234,39 @@ verified on file-backed SQLite and PostgreSQL.
 Final full-suite rerun after this fix: **6,085 passed, 15 skipped** across
 `libs/agno/tests/unit/db` and `libs/agno/tests/unit/os`. The temporary MongoDB
 container was removed after the run; existing PostgreSQL services were retained.
+
+
+### Execution and attention — October 16, 2026
+
+**Status:** PASS
+
+**Description:** Reran `01_manage_products.py`, `02_manage_projects.py`,
+`03_manage_tasks.py`, `04_manage_playbook.py` and `05_product_manager.py` from
+`cookbook/05_agent_os/30_company/` using the development environment after
+merging Playbook fixes at `769eee4306558569988b346a8bd71dc9b945b700`.
+The Task cookbook now supplies its executor registry at acceptance.
+
+**Result:** Every existing assertion passed. Products/Projects/Tasks retain their
+lifecycle behavior; wiki edits reject stale versions; Product Manager tools
+persist proposals, status and decisions. No model calls were made.
+
+---
+
+### 06_execute_tasks.py
+
+**Status:** PASS
+
+**Description:** Ran `cookbook/05_agent_os/30_company/06_execute_tasks.py` twice:
+default SQLite Company/session storage with a PostgreSQL durable queue, and
+`COMPANY_DB=postgres` for PostgreSQL Company/session/queue storage. The real
+application lifespan starts the queue worker. A registered workflow receives
+only brief/wiki/evidence, executes an accepted Task, and persists its result.
+
+**Result:** Both runs reached In review, returned the original run for the
+repeated attempt, and listed one ordinary run in the Task session. Attention
+returned `{"proposals": 0, "in_review": 1, "failed": 0}`. Both workers shut down
+cleanly and the example removed its temporary schema. SQLite emitted the
+existing warning that its session fallback does not provide PostgreSQL's
+attempt fencing. No provider calls were made.
+
+---
