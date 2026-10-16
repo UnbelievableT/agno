@@ -77,8 +77,9 @@ async def test_evidence_repeat_failure_completion_and_product_scope(heartbeat, t
     assert first["evidence"][0]["content_hash"]
     repeat = await call("intake", source["id"], "repeat-run", proposal)
     assert repeat["id"] == first["id"]
+    (tmp_path / "unrelated.md").write_text("A sibling is not the configured Source")
     path.unlink()
-    with pytest.raises(ValueError):
+    with pytest.raises(ValueError, match="Source root is unavailable"):
         await call("intake", source["id"], "failed-run", proposal)
     assert (await call("list_tasks", product_id=product["id"]))[1] == 1
     path.write_text("# Release\nA new feature.\n")
