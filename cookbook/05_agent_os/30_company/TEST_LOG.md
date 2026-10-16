@@ -2,6 +2,28 @@
 
 ## Heartbeat verification — October 16, 2026
 
+### Latest execution-base verification
+
+**Status:** PASS
+
+**Description:** Merged execution branch head
+`41e7a104b48e891c2a53518589d6d8f677fddd5f` with a normal merge commit,
+retaining both execution and Heartbeat regression tests. Reran every Company
+cookbook and the PostgreSQL execution variant, all Company/scheduler integrations,
+and the complete database/OS/scheduler unit suites. A temporary localhost-only
+MongoDB container supported the existing Mongo unit and scheduler tests.
+
+**Result:** Full unit rerun: **6,270 passed, 47 conditional skips**. Final
+integrations: **261 passed, no skips**, including every SQLite/PostgreSQL case
+and scheduler MongoDB lifecycle parity. Focused Task/Heartbeat/provenance checks:
+**169 passed**; the subsequent setup identity regression passed all **10**
+Heartbeat route tests. Setup retries retain the original Product even after
+additional Products are created. All seven cookbooks and the extra PostgreSQL
+execution run passed. Format and validation passed, with both mypy results read.
+No live model or outbound messaging calls were made.
+
+---
+
 ### Required regression suites
 
 **Status:** PASS
