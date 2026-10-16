@@ -2,6 +2,27 @@
 
 ## Heartbeat verification — October 16, 2026
 
+### Required regression suites
+
+**Status:** PASS
+
+**Description:** Ran the complete `libs/agno/tests/unit/db`,
+`libs/agno/tests/unit/os` and `libs/agno/tests/unit/scheduler` suites, plus
+all Company and scheduler database/OS integrations. Used Python 3.12 with
+temporary optional dependencies; PostgreSQL integrations used the local
+database on port 5532 and isolated schemas. The final setup ownership change
+also passed the focused Heartbeat route/storage suite (35 tests).
+
+**Result:** Unit suites: **6,270 passed, 47 skipped**. Conditional skips require
+optional Firestore/Mongo/MySQL/asyncpg drivers, Redis, root, or a live OpenAI
+credential. Company/scheduler integrations: **241 passed, 4 skipped**; only
+MongoDB lifecycle cases skipped. All SQLite/PostgreSQL integration cases ran.
+Compilation, `./scripts/format.sh` and `./scripts/validate.sh` passed; validation
+output was read, including successful mypy checks on 1,155 framework files
+and 21 CLI files. Validation used the clean Python 3.10 environment.
+
+---
+
 ### 01_manage_products.py, 02_manage_projects.py, 03_manage_tasks.py
 
 **Status:** PASS
