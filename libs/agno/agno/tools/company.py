@@ -602,8 +602,11 @@ def _public_json(value, **kwargs):
 
     def clean(item):
         if isinstance(item, dict):
-            return {key: clean(child) for key, child in item.items()
-                    if key not in {AUTHORIZATION_KEY, "_agno_company_acceptance"}}
+            return {
+                key: clean(child)
+                for key, child in item.items()
+                if key not in {AUTHORIZATION_KEY, "_agno_company_acceptance"}
+            }
         if isinstance(item, list):
             return [clean(child) for child in item]
         return item

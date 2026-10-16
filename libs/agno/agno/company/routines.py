@@ -246,8 +246,6 @@ async def _ensure_automation_schedule(db):
     return existing
 
 
-
-
 class _CompanyScheduleExecutor(ScheduleExecutor):
     """Run the existing scheduler's claimed Company tick, without another loop."""
 

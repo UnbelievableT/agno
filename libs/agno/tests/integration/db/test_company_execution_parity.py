@@ -315,7 +315,9 @@ async def test_results_cannot_cross_revoked_acceptance(system):
 
     client, db, worker, os, _ = system
     value = await accepted(client)
-    reserved = await _call(db, "start_task_run", value["id"], 1, (await _call(db, "get_task", value["id"]))["transitions"])
+    reserved = await _call(
+        db, "start_task_run", value["id"], 1, (await _call(db, "get_task", value["id"]))["transitions"]
+    )
     await _call(db, "transition_task", value["id"], "backlog", "Withdraw")
     await _call(db, "transition_task", value["id"], "ready", "New scope", executor_type="agent", executor_id="writer")
     await _call(db, "transition_task", value["id"], "in_progress", "Manual work")
