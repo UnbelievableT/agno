@@ -17,6 +17,7 @@ async def arehydrate_product(db: Any, product: Product, registry: Any = None, sc
     import time
 
     product_id = product.id or str(uuid5(NAMESPACE_URL, "agno:company:product:" + product.name))
+    routine_fields = [_schedule_fields(product_id, routine, registry) for routine in product.routines]
     row = await _call(db, "get_product", product_id, include_deleted=True)
     if row is None:
         try:
@@ -45,7 +46,10 @@ async def arehydrate_product(db: Any, product: Product, registry: Any = None, sc
     # An existing owner remains authoritative; declarations never reassign ownership.
     for source in product.sources:
         source_id = source.id or str(uuid5(NAMESPACE_URL, product_id + ":" + source.type + ":" + source.reference))
-        if await _call(db, "get_source", source_id, include_deleted=True) is None:
+        existing_source = await _call(db, "get_source", source_id, include_deleted=True)
+        if existing_source is not None and existing_source["product_id"] != product_id:
+            raise ValueError("Source id belongs to another Product")
+        if existing_source is None:
             try:
                 await _call(
                     db,
@@ -63,10 +67,12 @@ async def arehydrate_product(db: Any, product: Product, registry: Any = None, sc
             except Exception as exc:
                 if not is_unique_violation(exc):
                     raise
+                existing_source = await _call(db, "get_source", source_id, include_deleted=True)
+                if existing_source is None or existing_source["product_id"] != product_id:
+                    raise ValueError("Source id belongs to another Product") from exc
     schedule_db = schedule_db if schedule_db is not None else db
     schedules = ScheduleManager(schedule_db)
-    for routine in product.routines:
-        fields = _schedule_fields(product_id, routine, registry)
+    for routine, fields in zip(product.routines, routine_fields):
         fields["cron"] = fields.pop("cron_expr")
         try:
             schedule = await schedules.acreate(

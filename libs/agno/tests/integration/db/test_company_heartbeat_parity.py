@@ -120,3 +120,40 @@ async def test_summary_wiki_and_configured_transport(heartbeat, monkeypatch):
     assert delivery.await_count == 1
     await call("summarize", product["id"], "summary-run", [])
     assert delivery.await_count == 1
+
+
+@pytest.mark.asyncio
+async def test_concurrent_evidence_and_routine_linking(heartbeat, tmp_path):
+    from agno.company.execution import _call
+
+    db, manager, call = heartbeat
+    product = await call("create", "Concurrent", metadata={"human": "keep"})
+    path = tmp_path / "race.md"
+    path.write_text("Same evidence")
+    source = await call("create_source", product["id"], "markdown", str(path))
+    # Initialize the shared tables before racing independent transactions.
+    await call("intake", source["id"], "seed")
+    path.write_text("New evidence")
+    results = await asyncio.gather(*(call("intake", source["id"], "run-" + str(i)) for i in range(6)))
+    assert len({result[0]["id"] for result in results}) == 1
+    assert (await call("list_tasks", product_id=product["id"]))[1] == 2
+    await asyncio.gather(*(_call(db, "add_product_routine", product["id"], "schedule-" + str(i)) for i in range(6)))
+    metadata = (await call("get", product["id"]))["metadata"]
+    assert metadata["human"] == "keep" and len(metadata["routine_ids"]) == 6
+
+
+@pytest.mark.asyncio
+async def test_git_provider_exclusions_and_failed_batch(heartbeat, tmp_path):
+    db, manager, call = heartbeat
+    root = tmp_path / "repo"
+    root.mkdir()
+    (root / "readme.md").write_text("Public content")
+    (root / ".env").write_text("SECRET=never-in-evidence")
+    product = await call("create", "Repository")
+    source = await call("create_source", product["id"], "git", str(root))
+    evidence = await call("read_source", source["id"], "read")
+    assert len(evidence) == 1 and "never-in-evidence" not in str(evidence)
+    invalid = await call("create_source", product["id"], "git", str(root), config={"paths": ["readme.md", ".env"]})
+    with pytest.raises(ValueError, match="Source read failed"):
+        await call("intake", invalid["id"], "failed")
+    assert (await call("list_tasks"))[1] == 0

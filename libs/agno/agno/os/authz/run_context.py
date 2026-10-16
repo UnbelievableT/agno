@@ -28,7 +28,12 @@ def restore_authorization(app: Any, snapshot: Optional[Dict[str, Any]]) -> Optio
     if snapshot.get("company_routine"):
         from agno.company.routines import _RoutineAuthorization
 
-        return _RoutineAuthorization(authority)
+        routine_authority = _RoutineAuthorization(
+            None if snapshot.get("company_routine_unscoped") else authority,
+            routine_id=snapshot.get("company_routine_id"),
+        )
+        routine_authority.context = authority.context
+        return routine_authority
     if snapshot.get("company_executor"):
         from agno.company.execution import _ExecutorAuthorization
 

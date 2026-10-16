@@ -256,12 +256,12 @@ async def test_existing_task_table_migrates_idempotently(system):
 
     client, db, worker, os, components = system
     name = "custom_company_tasks"
-    new_columns = {"session_id", "job_id", "evidence", "result"}
+    new_columns = {"session_id", "job_id", "evidence", "result", "origin", "routine_id", "dedupe_key"}
     schema = getattr(db, "db_schema", None)
     table = Table(name, MetaData(), schema=schema)
     # A real populated table from before execution, using portable JSON for legacy columns.
     for key, definition in TASKS_TABLE_SCHEMA.items():
-        if key not in new_columns:
+        if key not in new_columns and not key.startswith("_"):
             table.append_column(
                 Column(
                     key,
@@ -294,7 +294,7 @@ async def test_existing_task_table_migrates_idempotently(system):
     value = await _call(db, "get_task", "existing")
     assert value["title"] == "Keep this" and new_columns <= set(value)
     assert all(value[key] is None for key in new_columns)
-    assert await _call(db, "get_latest_schema_version", name) == "3.1.4"
+    assert await _call(db, "get_latest_schema_version", name) == "3.1.5"
 
     def inspect_table(conn):
         return inspect(conn).get_indexes(name, schema=schema)
@@ -356,3 +356,93 @@ async def test_run_history_and_duplicate_survive_ticket_retention(system):
     assert revision.json()["run_id"] != run_id
     os.registry.agents.clear()
     assert (await client.get(path + "/runs")).json()["meta"]["total_count"] == 2
+
+
+@pytest.mark.asyncio
+async def test_routine_intake_through_scheduler_and_durable_queue(system, tmp_path):
+    from agno.company.execution import _call
+    from agno.scheduler.executor import ScheduleExecutor
+    from agno.tools.company import CompanyTools
+
+    client, db, worker, os, components = system
+    path = tmp_path / "release.md"
+    path.write_text("A released capability")
+    product = (await client.post("/company/products", json={"name": "Docs"})).json()
+    source = (
+        await client.post(
+            "/company/sources", json={"product_id": product["id"], "type": "markdown", "reference": str(path)}
+        )
+    ).json()
+
+    class IntakeModel(OfflineModel):
+        def invoke(self, messages, *args, **kwargs):
+            if not any(message.role == "tool" for message in messages):
+                return ModelResponse(
+                    role="assistant",
+                    tool_calls=[
+                        {
+                            "id": "intake",
+                            "type": "function",
+                            "function": {
+                                "name": "intake_company_source",
+                                "arguments": json.dumps({"source_id": source["id"]}),
+                            },
+                        }
+                    ],
+                    response_usage=MessageMetrics(),
+                )
+            return ModelResponse(
+                role="assistant",
+                content="Source checked; proposals remain in Backlog.",
+                response_usage=MessageMetrics(),
+            )
+
+    components["writer"].model = IntakeModel()
+    components["writer"].tools = [CompanyTools(db)]
+    response = await client.post(
+        "/company/routines",
+        json={
+            "product_id": product["id"],
+            "name": "intake",
+            "template": "intake",
+            "executor_type": "agent",
+            "executor_id": "writer",
+            "cron_expr": "0 * * * *",
+        },
+    )
+    assert response.status_code == 201, response.text
+    routine = response.json()
+    app = worker.authorization_app
+    app.state.internal_service_token = "heartbeat-internal"
+    executor = ScheduleExecutor(base_url="http://test", internal_service_token="heartbeat-internal", poll_interval=0)
+    original_request = client.request
+
+    async def request_and_work(method, url, **kwargs):
+        result = await original_request(method, url, **kwargs)
+        if method == "POST" and result.status_code == 202:
+            completed = await execute(worker)
+            assert completed["status"] == "completed", completed
+        return result
+
+    from unittest.mock import AsyncMock
+
+    executor._get_client = AsyncMock(return_value=SimpleClient(request_and_work))
+    schedule = await _call(db, "get_schedule", routine["id"])
+    first = await executor.execute(schedule, db, release_schedule=False)
+    assert first["status"] == "success", first
+    rows, total = await _call(db, "get_tasks", product_id=product["id"])
+    assert total == 1, first
+    assert rows[0]["routine_id"] == routine["id"]
+    assert rows[0]["evidence"][0]["run_id"] == first["run_id"]
+    assert rows[0]["status"] == "backlog"
+    second = await executor.execute(schedule, db, release_schedule=False)
+    assert second["status"] == "success", second
+    assert (await _call(db, "get_tasks", product_id=product["id"]))[1] == 1
+    history = (await client.get("/company/routines/" + routine["id"] + "/runs")).json()
+    assert history["meta"]["total_count"] == 2
+    assert all(run["status"] == "success" for run in history["data"])
+
+
+class SimpleClient:
+    def __init__(self, request):
+        self.request = request

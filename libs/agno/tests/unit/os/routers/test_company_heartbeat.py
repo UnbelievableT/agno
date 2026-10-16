@@ -57,6 +57,33 @@ def test_routine_scheduler_wrappers(system):
     assert len(client.get("/company/routines").json()["data"]) == 1
 
 
+@pytest.mark.parametrize("field,value", [("cron_expr", "bad cron"), ("timezone", "not/a/timezone")])
+def test_invalid_setup_does_not_create_records(system, field, value):
+    client, _, db = system
+    routine = dict(name="intake", template="intake", executor_type="agent", executor_id="reader", cron_expr="0 * * * *")
+    routine[field] = value
+    response = client.post("/company/setup", json={"name": "Invalid", "routines": [routine]})
+    assert response.status_code == 422
+    assert db.get_products()[1] == 0
+
+
+@pytest.mark.asyncio
+async def test_summary_uses_telegram_interface_transport(monkeypatch):
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    from agno.company.summary import adeliver_summary
+
+    bot = SimpleNamespace(send_message=AsyncMock(), close_session=AsyncMock())
+    factory = Mock(return_value=bot)
+    monkeypatch.setattr("telebot.async_telebot.AsyncTeleBot", factory)
+    interface = SimpleNamespace(type="telegram", token="configured-token")
+    await adeliver_summary([interface], "telegram", "123", "Product report")
+    factory.assert_called_once_with("configured-token")
+    assert bot.send_message.await_args.args[:2] == (123, "Product report")
+    bot.close_session.assert_awaited_once()
+
+
 def test_sources_setup_restart_and_diagnostics(system, tmp_path, monkeypatch):
     client, os, db = system
     path = tmp_path / "readme.md"
@@ -144,4 +171,89 @@ def test_yaml_and_code_rehydrate_without_reset(tmp_path):
     config.write_text("company:\n  products:\n    - name: SDK\n      purpose: stale declaration\n")
     with TestClient(AgentOS(db=db, config=str(config), telemetry=False).get_app()) as client:
         assert client.get("/company/products").json()["data"][0]["purpose"] == "Human direction"
+    db.close()
+
+
+@pytest.mark.parametrize("isolation", [False, True])
+def test_sources_and_routines_scopes_and_ownership(tmp_path, isolation):
+    from datetime import datetime, timedelta, timezone
+
+    import jwt
+
+    from agno.os.config import AuthorizationConfig
+
+    secret = "heartbeat-isolation-secret"
+    scopes = [
+        "products:read",
+        "products:write",
+        "sources:read",
+        "sources:write",
+        "sources:delete",
+        "routines:read",
+        "routines:write",
+        "schedules:read",
+        "schedules:write",
+        "agents:reader:run",
+    ]
+
+    def headers(user, granted=None):
+        return {
+            "Authorization": "Bearer "
+            + jwt.encode(
+                {
+                    "sub": user,
+                    "aud": "heartbeat",
+                    "scopes": scopes if granted is None else granted,
+                    "exp": datetime.now(timezone.utc) + timedelta(hours=1),
+                },
+                secret,
+                algorithm="HS256",
+            )
+        }
+
+    db = SqliteDb(db_file=str(tmp_path / "isolated.db"))
+    os = AgentOS(
+        id="heartbeat",
+        db=db,
+        agents=[Agent(id="reader", telemetry=False)],
+        company=CompanyConfig(),
+        telemetry=False,
+        authorization=True,
+        authorization_config=AuthorizationConfig(
+            verification_keys=[secret], algorithm="HS256", user_isolation=isolation
+        ),
+    )
+    with TestClient(os.get_app()) as client:
+        product = client.post("/company/products", headers=headers("alice"), json={"name": "Docs"}).json()
+        body = {"product_id": product["id"], "type": "markdown", "reference": "/docs"}
+        assert client.post("/company/sources", headers=headers("bob"), json=body).status_code == (
+            403 if isolation else 201
+        )
+        assert client.post("/company/sources", headers=headers("alice"), json=body).status_code == 201
+        assert client.get("/company/sources", headers=headers("bob", ["sources:read"])).json()["data"]
+        routine = {
+            "product_id": product["id"],
+            "name": "intake",
+            "template": "intake",
+            "executor_type": "agent",
+            "executor_id": "reader",
+            "cron_expr": "0 * * * *",
+        }
+        assert (
+            client.post(
+                "/company/routines",
+                headers=headers("alice", [s for s in scopes if s != "schedules:write"]),
+                json=routine,
+            ).status_code
+            == 403
+        )
+        assert (
+            client.post(
+                "/company/routines",
+                headers=headers("alice", [s for s in scopes if s != "agents:reader:run"]),
+                json=routine,
+            ).status_code
+            == 403
+        )
+        assert client.post("/company/routines", headers=headers("alice"), json=routine).status_code == 201
     db.close()

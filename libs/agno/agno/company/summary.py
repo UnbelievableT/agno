@@ -18,12 +18,15 @@ async def adeliver_summary(interfaces: Sequence[Any], interface_type: str, desti
         client = AsyncWebClient(token=interface.token or os.getenv("SLACK_TOKEN"), ssl=interface.ssl)
         await send_slack_message_async(client, destination, "", message)
     elif interface_type == "telegram":
-        from telegram import Bot  # type: ignore[import-not-found]
+        from telebot.async_telebot import AsyncTeleBot
 
         from agno.os.interfaces.telegram.helpers import send_message
 
-        async with Bot(token=interface.token or os.getenv("TELEGRAM_TOKEN")) as bot:
+        bot = AsyncTeleBot(interface.token or os.getenv("TELEGRAM_TOKEN"))
+        try:
             await send_message(bot, int(destination), message)
+        finally:
+            await bot.close_session()
     elif interface_type == "whatsapp":
         from agno.os.interfaces.whatsapp.helpers import WhatsAppConfig, send_whatsapp_message_async
 

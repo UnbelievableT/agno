@@ -16,7 +16,6 @@ from agno.os import AgentOS, CompanyConfig
 from agno.tools.company import CompanyTools
 from fastapi.testclient import TestClient
 
-
 if __name__ == "__main__":
     with TemporaryDirectory() as directory:
         release = Path(directory) / "release.md"

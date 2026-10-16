@@ -474,7 +474,12 @@ class CompanyTools(Toolkit):
     ) -> str:
         """List the readers configured by humans for a Product."""
         _permission("sources", "read", _agno_run_context)
-        return _page(self._sync().list_sources(product_id=product_id, limit=limit, page=page), limit, page)
+        rows, total = self._sync().list_sources(product_id=product_id, limit=limit, page=page)
+        return _page(
+            ([{key: value for key, value in row.items() if key != "credential_ref"} for row in rows], total),
+            limit,
+            page,
+        )
 
     @requires_permission()
     def read_company_source(self, source_id: str, _agno_run_context: Optional[Any] = None) -> str:
@@ -490,7 +495,14 @@ class CompanyTools(Toolkit):
         _permission("tasks", "write", _agno_run_context)
         self._scoped_user(_agno_run_context)
         run_id = self._source_context(source_id, _agno_run_context)
-        return json.dumps(self._sync().intake(source_id, run_id, user_id=_identity(_agno_run_context)))
+        return json.dumps(
+            self._sync().intake(
+                source_id,
+                run_id,
+                user_id=_identity(_agno_run_context),
+                routine_id=getattr(_authority(_agno_run_context), "routine_id", None),
+            )
+        )
 
     @requires_permission()
     def summarize_company_product(self, product_id: str, _agno_run_context: Optional[Any] = None) -> str:
@@ -509,7 +521,12 @@ class CompanyTools(Toolkit):
     ) -> str:
         """List the readers configured by humans for a Product."""
         await _apermission("sources", "read", _agno_run_context)
-        return _page(await self._async().list_sources(product_id=product_id, limit=limit, page=page), limit, page)
+        rows, total = await self._async().list_sources(product_id=product_id, limit=limit, page=page)
+        return _page(
+            ([{key: value for key, value in row.items() if key != "credential_ref"} for row in rows], total),
+            limit,
+            page,
+        )
 
     @requires_permission()
     async def aread_company_source(self, source_id: str, _agno_run_context: Optional[Any] = None) -> str:
@@ -525,7 +542,14 @@ class CompanyTools(Toolkit):
         await _apermission("tasks", "write", _agno_run_context)
         self._scoped_user(_agno_run_context)
         run_id = self._source_context(source_id, _agno_run_context)
-        return json.dumps(await self._async().intake(source_id, run_id, user_id=_identity(_agno_run_context)))
+        return json.dumps(
+            await self._async().intake(
+                source_id,
+                run_id,
+                user_id=_identity(_agno_run_context),
+                routine_id=getattr(_authority(_agno_run_context), "routine_id", None),
+            )
+        )
 
     @requires_permission()
     async def asummarize_company_product(self, product_id: str, _agno_run_context: Optional[Any] = None) -> str:

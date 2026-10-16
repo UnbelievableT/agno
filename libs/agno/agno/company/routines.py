@@ -2,7 +2,7 @@
 
 import asyncio
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from agno.company.declarations import Routine
 from agno.company.execution import _ExecutorAuthorization, _validate_executor_tools
@@ -46,5 +46,14 @@ def _schedule_fields(product_id: str, routine: Routine, registry: Any) -> Dict[s
 class _RoutineAuthorization(_ExecutorAuthorization):
     """Routine authority permits proposals, never acceptance or schedule edits."""
 
+    def __init__(self, original: Any, routine_id: Optional[str] = None):
+        super().__init__(original)
+        self.routine_id = routine_id
+
     def snapshot(self) -> Dict[str, Any]:
-        return {**super().snapshot(), "company_routine": True}
+        return {
+            **super().snapshot(),
+            "company_routine": True,
+            "company_routine_unscoped": self.original is None,
+            "company_routine_id": self.routine_id,
+        }

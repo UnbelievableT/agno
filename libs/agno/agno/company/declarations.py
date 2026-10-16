@@ -32,6 +32,16 @@ class Routine(BaseModel):
     instructions: Optional[str] = None
     auto_accept: Literal[False] = False
 
+    @model_validator(mode="after")
+    def validate_schedule(self):
+        from agno.scheduler.cron import validate_cron_expr, validate_timezone
+
+        if not validate_cron_expr(self.cron_expr):
+            raise ValueError("Invalid cron expression")
+        if not validate_timezone(self.timezone):
+            raise ValueError("Invalid timezone")
+        return self
+
 
 class Product(BaseModel):
     model_config = ConfigDict(extra="forbid")
