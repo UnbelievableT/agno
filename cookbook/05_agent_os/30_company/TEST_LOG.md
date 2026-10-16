@@ -2,6 +2,28 @@
 
 ## Heartbeat verification — October 16, 2026
 
+### Final initial-schema verification
+
+**Status:** PASS
+
+**Description:** Incorporated PR 4's rebase onto main and initial-schema cleanup
+through `309ab2e94decb310852b6c373a557695b6ef979b` using normal merge commits.
+Company is unreleased, so execution and Heartbeat fields remain in the initial
+Task schema; the draft migrations were removed. Fresh custom Task-table tests
+cover execution/evidence fields, Routine provenance and deduplication identity.
+
+**Result:** Complete database/OS/scheduler unit suites: **6,282 passed,
+39 conditional skips** for optional drivers, root or live credentials.
+Company/scheduler integrations plus the inherited filesystem transaction
+regressions: **346 passed, no skips** (313 Company/scheduler and 33 filesystem).
+All seven Company cookbooks passed again, and execution also passed with
+PostgreSQL Company storage. Format and validation passed; the complete output
+was read, including mypy success on 1,153 framework files and 21 CLI files.
+No live model or outbound messages were used. The temporary MongoDB container
+was removed after testing; existing PostgreSQL and Redis services were retained.
+
+---
+
 ### Latest execution-base verification
 
 **Status:** PASS
