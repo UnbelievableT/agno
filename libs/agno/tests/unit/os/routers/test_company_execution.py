@@ -179,6 +179,9 @@ async def test_automatic_pickup_keeps_accepting_identity_and_run_scope(system):
     executor = _CompanyScheduleExecutor(
         os, client.app, base_url="http://test", internal_service_token="company-internal"
     )
+    # The internal token alone cannot acquire the in-process tick capability.
+    response = client.post(path + "/runs", headers={"Authorization": "Bearer company-internal"})
+    assert response.status_code == 403, response.text
     stored = db.get_task(task["id"])
     snapshot = stored["transitions"][-1][AUTHORIZATION_KEY]
     assert snapshot["context"]["principal_id"] == "alice"

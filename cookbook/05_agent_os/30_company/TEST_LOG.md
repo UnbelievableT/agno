@@ -354,3 +354,31 @@ calls were made. Format and validation passed and their output was read.
 The full unit-suite result above predates these focused review fixes.
 
 ---
+
+### Automation cookbook regression — October 16, 2026
+
+**Status:** PASS
+
+**Description:** Ran all seven files in `cookbook/05_agent_os/30_company/`
+with the Python 3.12 development environment:
+
+- `01_manage_products.py`: Product CRUD and lifecycle assertions passed.
+- `02_manage_projects.py`: Project lifecycle and Product ownership assertions passed.
+- `03_manage_tasks.py`: Task acceptance and lifecycle assertions passed.
+- `04_manage_playbook.py`: wiki persistence and version-conflict checks passed.
+- `05_product_manager.py`: proposal, status, and decision tools passed.
+- `06_execute_tasks.py`: manual start passed on SQLite and PostgreSQL.
+- `07_heartbeat.py`: Routine, Source, and rehydration assertions passed.
+
+**Result:** Ten executions passed, including two additional runs of
+`06_execute_tasks.py` with `COMPANY_AUTOMATION=1`, once with SQLite Company
+storage and once with `COMPANY_DB=postgres`. Both used the real PostgreSQL
+durable queue and application scheduler lifespan. A human-accepted Ready Task
+was picked up without a start request; a Routine proposal with verified Source
+evidence was automatically accepted using the built-in `has_source_evidence`
+and `executor_registered` checks, then executed to In review. The example
+revoked the authorization and cleaned up its temporary schema. No application
+check registration, provider calls, or external messages were needed. SQLite
+retains its documented development-only session fallback.
+
+---

@@ -503,7 +503,8 @@ async def test_automation_concurrent_ticks_and_restart(system, monkeypatch):
 
 
 @pytest.mark.asyncio
-async def test_automation_crash_between_reservation_and_queue(system, monkeypatch):
+@pytest.mark.parametrize("queued", [False, True])
+async def test_automation_crash_during_dispatch(system, monkeypatch, queued):
     from agno.company.execution import _call
     from agno.os.routers.company import runs
 
@@ -513,13 +514,15 @@ async def test_automation_crash_between_reservation_and_queue(system, monkeypatc
     original = runs._run_route
 
     async def interrupted(*args, **kwargs):
-        raise RuntimeError("process stopped after reservation")
+        if queued:
+            await original(*args, **kwargs)
+        raise RuntimeError("process stopped before dispatch response")
 
     monkeypatch.setattr(runs, "_run_route", interrupted)
     first = await tick(executor, db)
     reserved = await _call(db, "get_task", task["id"])
     assert reserved["status"] == "in_progress", first
-    assert await worker.store.get_job(reserved["job_id"]) is None
+    assert (await worker.store.get_job(reserved["job_id"]) is not None) is queued
     monkeypatch.setattr(runs, "_run_route", original)
     restarted, _ = await automation(system)
     await _call(db, "update_schedule", schedule["id"], next_run_at=0)
