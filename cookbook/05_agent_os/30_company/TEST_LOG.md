@@ -2,6 +2,27 @@
 
 ## Heartbeat verification — October 16, 2026
 
+### Required regression suites
+
+**Status:** PASS
+
+**Description:** Ran the complete `libs/agno/tests/unit/db`,
+`libs/agno/tests/unit/os` and `libs/agno/tests/unit/scheduler` suites, plus
+all Company and scheduler database/OS integrations. Used Python 3.12 with
+temporary optional dependencies; PostgreSQL integrations used the local
+database on port 5532 and isolated schemas. The final setup ownership change
+also passed the focused Heartbeat route/storage suite (35 tests).
+
+**Result:** Unit suites: **6,270 passed, 47 skipped**. Conditional skips require
+optional Firestore/Mongo/MySQL/asyncpg drivers, Redis, root, or a live OpenAI
+credential. Company/scheduler integrations: **241 passed, 4 skipped**; only
+MongoDB lifecycle cases skipped. All SQLite/PostgreSQL integration cases ran.
+Compilation, `./scripts/format.sh` and `./scripts/validate.sh` passed; validation
+output was read, including successful mypy checks on 1,155 framework files
+and 21 CLI files. Validation used the clean Python 3.10 environment.
+
+---
+
 ### 01_manage_products.py, 02_manage_projects.py, 03_manage_tasks.py
 
 **Status:** PASS
@@ -307,5 +328,29 @@ route tests: **13 passed** (10 overlap the full suite). These include the final
 without reserving a run. Format and validation passed, including both mypy
 checks, and all validation output was read. Validation used the clean Python
 3.10 environment; tests and cookbooks used the Python 3.12 development environment.
+
+---
+
+### Execution review fixes — October 16, 2026
+
+**Status:** PASS
+
+**Description:** Reproduced rejected input consuming a Task attempt and
+`failed=false` omitting pending Tasks whose result is JSON null. All 16 new
+regression cases failed before the fix across sync/async SQLite and PostgreSQL;
+input rejection was checked for agents, teams and workflows. The existing run
+validator now checks input before reservation, and nonfailed filters include
+null extracted result statuses.
+
+**Result:** Execution, Task router/isolation and Task storage regressions passed
+**197 tests**, including all 16 new cases. Rejected input leaves Ready and its
+transition history intact; correcting the executor schema allows attempt 1 to
+complete. Pending and unstarted Tasks both appear in nonfailed counts before
+pagination; failed Tasks appear only in the failed filter. Reran
+`cookbook/05_agent_os/30_company/06_execute_tasks.py` with SQLite and with
+`COMPANY_DB=postgres`: both passed through the real durable worker, returning
+the first run on duplicate start and reporting one Task In review. No provider
+calls were made. Format and validation passed and their output was read.
+The full unit-suite result above predates these focused review fixes.
 
 ---

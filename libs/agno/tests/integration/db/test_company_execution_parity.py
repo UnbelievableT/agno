@@ -435,6 +435,10 @@ async def test_routine_intake_through_scheduler_and_durable_queue(system, tmp_pa
     rows, total = await _call(db, "get_tasks", product_id=product["id"])
     assert total == 1, first
     assert rows[0]["routine_id"] == routine["id"]
+    task_response = (await client.get("/company/tasks/" + rows[0]["id"])).json()
+    assert task_response["origin"] == "routine"
+    assert task_response["routine_id"] == routine["id"]
+    assert task_response["dedupe_key"] == rows[0]["dedupe_key"]
     assert rows[0]["evidence"][0]["run_id"] == first["run_id"]
     assert rows[0]["status"] == "backlog"
     second = await executor.execute(schedule, db, release_schedule=False)
@@ -733,3 +737,60 @@ async def test_automation_records_revocation_before_dispatch(system, monkeypatch
     assert result["output"]["tasks"][0]["status"] == "skipped"
     assert "changed" in result["output"]["tasks"][0]["reason"]
     assert (await _call(db, "get_task", value["id"]))["job_id"] is None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("kind,id", [("agent", "writer"), ("team", "editors"), ("workflow", "draft")])
+async def test_invalid_executor_input_does_not_reserve_attempt(system, kind, id):
+    from pydantic import BaseModel
+
+    from agno.db.schemas.tasks import task_run_id
+
+    class TopicInput(BaseModel):
+        topic: str
+
+    client, db, worker, os, components = system
+    component = components[id]
+    component.input_schema = TopicInput
+    value = await accepted(client, kind, id)
+    path = f"/company/tasks/{value['id']}"
+    response = await client.post(path + "/runs")
+    assert response.status_code == 400, response.text
+    saved = (await client.get(path)).json()
+    assert saved["status"] == "ready"
+    assert saved["job_id"] is None
+    assert saved["transitions"] == value["transitions"]
+    assert await worker.store.get_job(task_run_id(value["id"], 1)) is None
+    assert (await client.get(path + "/runs")).json()["meta"]["total_count"] == 0
+
+    # A rejected input has not consumed the attempt. Correcting the executor's
+    # schema permits the same first attempt to enter the ordinary durable route.
+    component.input_schema = None
+    retried = await client.post(path + "/runs")
+    assert retried.status_code == 202, retried.text
+    assert (await execute(worker))["status"] == "completed"
+
+
+@pytest.mark.asyncio
+async def test_nonfailed_filter_includes_sql_and_json_null_results(system):
+    from agno.company.execution import _call
+
+    client, db, worker, os, _ = system
+    unstarted = await accepted(client)
+    pending = await accepted(client)
+    response = await client.post(f"/company/tasks/{pending['id']}/runs")
+    assert response.status_code == 202, response.text
+    nonfailed = (await client.get("/company/tasks", params={"failed": "false", "limit": 1})).json()
+    assert nonfailed["meta"]["total_count"] == 2
+    assert len(nonfailed["data"]) == 1
+    assert (await client.get("/company/tasks", params={"failed": "true"})).json()["meta"]["total_count"] == 0
+
+    await _call(
+        db, "complete_task_run", pending["id"], response.json()["run_id"], {"status": "ERROR", "content": "Failure"}
+    )
+    nonfailed = (await client.get("/company/tasks", params={"failed": "false"})).json()
+    failed = (await client.get("/company/tasks", params={"failed": "true"})).json()
+    assert nonfailed["meta"]["total_count"] == 1
+    assert [row["id"] for row in nonfailed["data"]] == [unstarted["id"]]
+    assert failed["meta"]["total_count"] == 1
+    assert [row["id"] for row in failed["data"]] == [pending["id"]]

@@ -95,7 +95,9 @@ def test_sources_setup_restart_and_diagnostics(system, tmp_path, monkeypatch):
     first = client.post("/company/setup", json=body)
     assert first.status_code == 201, first.text
     assert client.patch("/company/products/" + first.json()["id"], json={"name": "Human edit"}).status_code == 200
+    client.post("/company/products", json={"name": "Later Product"}).raise_for_status()
     second = client.post("/company/setup", json=body)
+    assert second.json()["id"] == first.json()["id"]
     assert second.json()["name"] == "Human edit"
     sources = client.get("/company/sources").json()["data"]
     assert len(sources) == 1
