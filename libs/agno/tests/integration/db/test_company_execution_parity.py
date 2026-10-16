@@ -351,6 +351,7 @@ async def test_routine_intake_through_scheduler_and_durable_queue(system, tmp_pa
 
     class IntakeModel(OfflineModel):
         def invoke(self, messages, *args, **kwargs):
+            assert any(product["id"] in str(message.content) for message in messages if message.role == "user")
             if not any(message.role == "tool" for message in messages):
                 return ModelResponse(
                     role="assistant",
@@ -360,7 +361,15 @@ async def test_routine_intake_through_scheduler_and_durable_queue(system, tmp_pa
                             "type": "function",
                             "function": {
                                 "name": "intake_company_source",
-                                "arguments": json.dumps({"source_id": source["id"]}),
+                                "arguments": json.dumps(
+                                    {
+                                        "source_id": source["id"],
+                                        "title": "Document release",
+                                        "brief": "Explain the capability",
+                                        "proposal_key": "release-docs",
+                                        "evidence_links": [path.as_uri()],
+                                    }
+                                ),
                             },
                         }
                     ],

@@ -4,13 +4,13 @@ import asyncio
 import inspect
 from typing import Any, Dict, Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from fastapi.routing import APIRoute
 from pydantic import BaseModel, ConfigDict
 
 from agno.company.declarations import Product, Routine, Source
 from agno.company.manager import AsyncCompanyManager, CompanyManager
-from agno.company.routines import _schedule_fields
+from agno.company.routines import _routine_message, _schedule_fields
 from agno.db.base import AsyncBaseDb
 from agno.os.auth import get_authentication_dependency
 from agno.os.middleware.user_scope import get_scoped_user_id
@@ -166,7 +166,10 @@ def get_heartbeat_router(agent_os: Any) -> APIRouter:
         if updates.pop("auto_accept", False):
             raise HTTPException(422, "Automatic acceptance is not available")
         if "instructions" in updates:
-            updates["payload"] = {**row["payload"], "message": updates.pop("instructions")}
+            updates["payload"] = {
+                **row["payload"],
+                "message": _routine_message(row["payload"]["metadata"]["product_id"], updates.pop("instructions")),
+            }
         return await call(handlers["update_schedule"], routine_id, ScheduleUpdate(**updates), request)
 
     @router.post("/routines/{routine_id}/pause")
@@ -193,7 +196,7 @@ def get_heartbeat_router(agent_os: Any) -> APIRouter:
         return await call(handlers["list_schedule_runs"], routine_id, request, limit=limit, page=page)
 
     @router.post("/setup", status_code=201)
-    async def setup(body: Setup, request: Request, _: bool = Depends(auth)):
+    async def setup(body: Setup, request: Request, response: Response, _: bool = Depends(auth)):
         from agno.company.bootstrap import arehydrate_product
         from agno.os.routers.run_permissions import _require_endpoint_permission
         from agno.run.authorization import current_authorization
@@ -213,11 +216,13 @@ def get_heartbeat_router(agent_os: Any) -> APIRouter:
         existing = await call(manager.get, "company-setup", include_deleted=True)
         if existing is not None:
             _require_write_ownership(existing, get_scoped_user_id(request))
-            return existing
-        rows, _ = await call(manager.list, limit=1, include_deleted=True)
-        if rows:
-            await product(rows[0]["id"], request)
-            return rows[0]
+            response.status_code = 200
+        else:
+            rows, _ = await call(manager.list, limit=1, include_deleted=True)
+            if rows:
+                await product(rows[0]["id"], request)
+                response.status_code = 200
+                return rows[0]
         product_declaration = Product(**{**body.model_dump(), "id": "company-setup", "user_id": owner})
         return await call(
             arehydrate_product,

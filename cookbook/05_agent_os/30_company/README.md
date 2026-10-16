@@ -190,21 +190,40 @@ company:
           cron_expr: "0 9 * * 1-5"
 ```
 
-The executor must already be registered. Give it `CompanyTools(db)` and
-`load_routine_skills()` if it should use the bundled reader, Intake and Summary
-tools. Enable the existing AgentOS scheduler and queue to run schedules; the
+The executor must already be registered; an invalid declared target fails startup
+instead of silently dropping its Routine. Give it `CompanyTools(db)` and
+`load_routine_skills()` for reader and Intake tools. Summary executors explicitly
+opt into `CompanyTools(db, summary_tools=True, interfaces=agent_os.interfaces)`.
+Product Manager has no outbound Summary tool. Enable the existing AgentOS scheduler and queue to run schedules; the
 cookbook only creates and inspects them. Scheduling never grants acceptance.
 The OS scheduler database owns Routine definitions/history even with a separate
 Company database. `metadata.routine_ids` links them to Products.
 
 The templates are packaged `SKILL.md` files under `agno/company/skills`, loaded
-through `LocalSkills`. Source types are `git` (a local checkout), `markdown` (a
+through `LocalSkills`. Creation snapshots the selected Skill's instructions into
+the schedule, with the Product id explicitly included in the model message.
+Following scheduler behavior, restarting or editing a Skill never overwrites
+human-edited schedule instructions. Apply revised instructions to an existing
+Routine with an authorized PATCH to `/company/routines/{id}`.
+Source types are `git` (a local checkout), `markdown` (a
 file or directory), and `website` (a single page). Optional `config.paths` limits
 local reads to relative files. Workspace exclusions and path confinement apply;
 credential references name environment variables, whose presence diagnostics
-report without disclosing values. Source reads produce evidence with the run id,
+report without disclosing values. These readers use local files or an unauthenticated
+website GET: `credential_ref` is a diagnostic prerequisite, not an authentication
+adapter, and its value is never passed to an executor or reader.
+Source reads require `sources:read`, not a separate filesystem grant. Automatic
+directory scans skip undecodable or oversized files and report `skipped_paths` in
+the evidence; explicitly selected files fail the entire read on error.
+Source reads produce evidence with the run id,
 a SHA-256 hash of reader content, and a link. Task deduplication is per Product,
 including completed and soft-deleted proposals. Failed reads create no proposals.
+Reading files creates no Tasks. The reader first decides whether useful work is
+needed, then supplies a title, concise brief, selected `evidence_links` and a stable
+Source-local `proposal_key` to Intake. The tool verifies those links against the
+reader output and stores hashes and links, without copying document content into
+the Task. Reuse the issue key across content and wording edits; a distinct issue
+has a distinct key. Database uniqueness remains scoped to the Product.
 
 `/company/routines` wraps the scheduler. Writes require both `routines:write`
 and `schedules:write`; histories require `routines:read` and `schedules:read`.
@@ -212,12 +231,15 @@ Pause/resume use scheduler disable/enable. Sources use `sources:read`,
 `sources:write` and `sources:delete`, with Product ownership on writes.
 `POST /company/setup` uses `products:write` to seed a blank deployment; nested
 Sources and Routines also require their own write permissions. Retries and
-restarts retain existing edits and do not restore archived records.
+restarts repair interrupted creation and linking, retain existing edits and do not
+restore archived records. Setup returns 201 for creation and 200 for a retry.
 
 Summary uses Product metadata such as
 `{"summary": {"interface": "slack", "destination": "C012345"}}` and the matching
 interface configured on AgentOS. Pass those interfaces to `CompanyTools` for
-custom executors. The summary is written to the Product wiki before delivery;
+custom executors with `summary_tools=True`. Summary updates the versioned
+`summary.md` Product wiki page before delivery, retaining delivery receipts so a
+repeated run does not resend after intervening successful runs;
 a transport failure remains a failed run with the report retained. Provider
 retry guarantees still apply if a process dies after sending but before recording
 success. No live messages are sent by this cookbook.

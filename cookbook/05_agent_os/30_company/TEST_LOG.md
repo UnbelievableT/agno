@@ -1,5 +1,80 @@
 # Test Log: Company Products
 
+## Heartbeat review fixes — October 16, 2026
+
+**Status:** PASS (focused checks, integration suites, scripts and cookbooks); full unit rerun in progress.
+
+**Description:** Added regressions for Product identity in actual scheduler/queue model messages,
+Source-only read authorization, binary/oversized repository files, explicit-file failures,
+interrupted setup creation/linking, preserved edits and tombstones, selective proposals,
+unchanged issue identity across evidence edits, summary retries and one versioned page,
+bounded Product Manager tools, and strict YAML declarations.
+
+**Result:** 53 focused Company tests and 350 Company/scheduler/filesystem integrations passed,
+with all four SQLite/PostgreSQL Company adapters exercised. Compilation, format and validation
+passed; complete output read, including mypy on 1,153 framework and 21 CLI files.
+Existing local PostgreSQL, MongoDB and Redis services were reused without altering them.
+No live model or outbound messages were used.
+
+### 01_manage_products.py
+
+**Status:** PASS
+
+**Description:** Reran Product CRUD, filtering and lifecycle with SQLite.
+
+**Result:** Completed successfully.
+
+### 02_manage_projects.py
+
+**Status:** PASS
+
+**Description:** Reran Product-contained Project lifecycle and filtering.
+
+**Result:** Completed successfully.
+
+### 03_manage_tasks.py
+
+**Status:** PASS
+
+**Description:** Reran Task transitions, executor assignment and evidence handling.
+
+**Result:** Completed successfully.
+
+### 04_manage_playbook.py
+
+**Status:** PASS
+
+**Description:** Reran versioned wiki edits and decision logging.
+
+**Result:** Completed successfully.
+
+### 05_product_manager.py
+
+**Status:** PASS
+
+**Description:** Reran bounded Product Manager assembly and tools without a model call.
+
+**Result:** Completed successfully.
+
+### 06_execute_tasks.py
+
+**Status:** PASS
+
+**Description:** Reran manual execution, durable queue and duplicate dispatch with SQLite and PostgreSQL Company storage.
+
+**Result:** Both variants completed successfully.
+
+### 07_heartbeat.py
+
+**Status:** PASS
+
+**Description:** Reran declaration/setup, scheduler provenance and explicit Intake proposals.
+Changed the Source between scans and reused the same issue key.
+
+**Result:** One Backlog Task retained its original evidence; no model call was made.
+
+---
+
 ## Heartbeat verification — October 16, 2026
 
 ### Final initial-schema verification

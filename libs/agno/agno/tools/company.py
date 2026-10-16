@@ -7,7 +7,7 @@ reassign ownership, edit a Product brief, change Sources, or schedule work.
 import asyncio
 import json
 from dataclasses import asdict
-from typing import Any, Optional
+from typing import Any, List, Optional
 
 from agno.company.manager import AsyncCompanyManager, CompanyManager
 from agno.company.playbook import _require_owner
@@ -61,6 +61,7 @@ class CompanyTools(Toolkit):
         *,
         user_isolation: bool = False,
         decision_tools: bool = True,
+        summary_tools: bool = False,
         agent_id: Optional[str] = None,
         interfaces: Any = None,
     ):
@@ -73,7 +74,6 @@ class CompanyTools(Toolkit):
             "list_company_sources",
             "read_company_source",
             "intake_company_source",
-            "summarize_company_product",
             "list_company_products",
             "get_company_product",
             "list_company_projects",
@@ -88,6 +88,8 @@ class CompanyTools(Toolkit):
         ]
         if decision_tools:
             names += ["log_company_decision", "search_company_decisions"]
+        if summary_tools:
+            names += ["summarize_company_product"]
         super().__init__(
             name="company",
             tools=[getattr(self, name) for name in names],
@@ -489,8 +491,21 @@ class CompanyTools(Toolkit):
         return json.dumps(self._sync().read_source(source_id, run_id))
 
     @requires_permission()
-    def intake_company_source(self, source_id: str, _agno_run_context: Optional[Any] = None) -> str:
-        """Read all evidence before proposing durable, deduplicated Backlog Tasks."""
+    def intake_company_source(
+        self,
+        source_id: str,
+        title: str,
+        brief: str,
+        proposal_key: str,
+        evidence_links: List[str],
+        _agno_run_context: Optional[Any] = None,
+    ) -> str:
+        """Propose actionable work backed by selected Source links.
+
+        Read the Source first. Use a stable proposal_key for the same issue across
+        scans and edits, and a concise outcome and brief, not copied file content.
+        The server verifies the links and attaches this run's hashes before writing.
+        """
         _permission("sources", "read", _agno_run_context)
         _permission("tasks", "write", _agno_run_context)
         self._scoped_user(_agno_run_context)
@@ -499,6 +514,7 @@ class CompanyTools(Toolkit):
             self._sync().intake(
                 source_id,
                 run_id,
+                {"title": title, "brief": brief, "proposal_key": proposal_key, "evidence_links": evidence_links},
                 user_id=_identity(_agno_run_context),
                 routine_id=getattr(_authority(_agno_run_context), "routine_id", None),
             )
@@ -536,8 +552,21 @@ class CompanyTools(Toolkit):
         return json.dumps(await self._async().read_source(source_id, run_id))
 
     @requires_permission()
-    async def aintake_company_source(self, source_id: str, _agno_run_context: Optional[Any] = None) -> str:
-        """Read all evidence before proposing durable, deduplicated Backlog Tasks."""
+    async def aintake_company_source(
+        self,
+        source_id: str,
+        title: str,
+        brief: str,
+        proposal_key: str,
+        evidence_links: List[str],
+        _agno_run_context: Optional[Any] = None,
+    ) -> str:
+        """Propose actionable work backed by selected Source links.
+
+        Read the Source first. Use a stable proposal_key for the same issue across
+        scans and edits, and a concise outcome and brief, not copied file content.
+        The server verifies the links and attaches this run's hashes before writing.
+        """
         await _apermission("sources", "read", _agno_run_context)
         await _apermission("tasks", "write", _agno_run_context)
         self._scoped_user(_agno_run_context)
@@ -546,6 +575,7 @@ class CompanyTools(Toolkit):
             await self._async().intake(
                 source_id,
                 run_id,
+                {"title": title, "brief": brief, "proposal_key": proposal_key, "evidence_links": evidence_links},
                 user_id=_identity(_agno_run_context),
                 routine_id=getattr(_authority(_agno_run_context), "routine_id", None),
             )

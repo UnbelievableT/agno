@@ -52,3 +52,20 @@ class Product(BaseModel):
     metadata: Dict[str, Any] = Field(default_factory=dict)
     sources: List[Source] = Field(default_factory=list)
     routines: List[Routine] = Field(default_factory=list)
+
+
+class CompanyDeclarations(BaseModel):
+    """Validated YAML declarations; runtime dependencies are supplied in code."""
+
+    model_config = ConfigDict(extra="forbid")
+    products: List[Product] = Field(default_factory=list)
+
+
+class IntakeProposal(BaseModel):
+    """An actionable proposal selected by the reader, not one Task per file."""
+
+    model_config = ConfigDict(extra="forbid", str_strip_whitespace=True)
+    title: str = Field(min_length=1)
+    brief: str = Field(min_length=1)
+    proposal_key: str = Field(min_length=1)
+    evidence_links: List[str] = Field(min_length=1)

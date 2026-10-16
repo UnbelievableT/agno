@@ -491,45 +491,43 @@ class CompanyManager:
             raise LookupError("Source not found")
         return read_source(source, run_id)
 
-    def intake(self, source_id: str, run_id: str, user_id: Optional[str] = None, routine_id: Optional[str] = None):
-        """Propose one Backlog task per new document; repeated evidence returns its original task."""
-        from agno.utils.string import hash_string_sha256
+    def intake(
+        self,
+        source_id: str,
+        run_id: str,
+        proposal: Any,
+        user_id: Optional[str] = None,
+        routine_id: Optional[str] = None,
+    ):
+        """Persist an explicit proposal with verified evidence and a stable Source-local identity."""
+        from agno.company.sources import _proposal_fields
 
         source = self.get_source(source_id)
         if source is None:
             raise LookupError("Source not found")
         evidence = self.read_source(source_id, run_id)
-        tasks = []
-        for item in evidence:
-            key = hash_string_sha256(item["link"] + ":" + item["content_hash"])
-            tasks.append(
-                self.db.create_task(
-                    {
-                        "id": str(uuid4()),
-                        "product_id": source["product_id"],
-                        "title": "Review " + item["link"],
-                        "brief": item["content"],
-                        "status": "backlog",
-                        "origin": "routine",
-                        "routine_id": routine_id,
-                        "dedupe_key": key,
-                        "evidence": [{k: v for k, v in item.items() if k != "content"}],
-                        "session_id": str(uuid4()),
-                        "user_id": user_id,
-                        "transitions": [],
-                        "created_at": int(time.time()),
-                        "updated_at": None,
-                        "deleted_at": None,
-                    }
-                )
-            )
-        return tasks
+        fields = _proposal_fields(source_id, proposal, evidence)
+        return self.db.create_task(
+            {
+                **fields,
+                "id": str(uuid4()),
+                "product_id": source["product_id"],
+                "status": "backlog",
+                "origin": "routine" if routine_id else "product_manager",
+                "routine_id": routine_id,
+                "session_id": str(uuid4()),
+                "user_id": user_id,
+                "transitions": [],
+                "created_at": int(time.time()),
+                "updated_at": None,
+                "deleted_at": None,
+            }
+        )
 
     def summarize(self, product_id: str, run_id: str, interfaces: Any, user_id: Optional[str] = None):
         """Write the observed report to the wiki and deliver using Product configuration."""
         from agno.company.playbook import _require_owner
-        from agno.company.summary import deliver_summary
-        from agno.utils.string import hash_string_sha256
+        from agno.company.summary import _summary_page, deliver_summary
 
         product = self.get(product_id)
         if product is None:
@@ -553,20 +551,17 @@ class CompanyManager:
         content += "\n\n" + "\n".join(f"- {task['title']}: {task['status']}" for task in rows)
         if not rows:
             content += "Quiet successful check: no work requires attention."
-        path = "summary-" + hash_string_sha256(run_id) + ".md"
+        path = "summary.md"
         try:
             existing = self.read_wiki(product_id, path)
         except LookupError:
             existing = None
-        if existing is not None and existing.content.endswith("\n\nDelivered.\n"):
+        report, delivered, marker = _summary_page(existing.content if existing else "", run_id, content)
+        if delivered:
             return {"path": path, "delivered": True, "quiet": True}
-        if existing is None:
-            saved = self.write_wiki(product_id, path, content, 0, user_id=user_id)
-        else:
-            saved = existing
-            content = existing.content
+        saved = self.write_wiki(product_id, path, report, existing.metadata.version if existing else 0, user_id=user_id)
         deliver_summary(interfaces, delivery["interface"], delivery["destination"], content)
-        self.write_wiki(product_id, path, content + "\n\nDelivered.\n", saved.version, user_id=user_id)
+        self.write_wiki(product_id, path, report + marker, saved.version, user_id=user_id)
         return {"path": path, "delivered": True, "quiet": not rows}
 
 
@@ -1056,46 +1051,42 @@ class AsyncCompanyManager:
         return await aread_source(source, run_id)
 
     async def intake(
-        self, source_id: str, run_id: str, user_id: Optional[str] = None, routine_id: Optional[str] = None
+        self,
+        source_id: str,
+        run_id: str,
+        proposal: Any,
+        user_id: Optional[str] = None,
+        routine_id: Optional[str] = None,
     ):
-        """Propose one Backlog task per new document; repeated evidence returns its original task."""
-        from agno.utils.string import hash_string_sha256
+        """Persist an explicit proposal with verified evidence and a stable Source-local identity."""
+        from agno.company.sources import _proposal_fields
 
         source = await self.get_source(source_id)
         if source is None:
             raise LookupError("Source not found")
         evidence = await self.read_source(source_id, run_id)
-        tasks = []
-        for item in evidence:
-            key = hash_string_sha256(item["link"] + ":" + item["content_hash"])
-            tasks.append(
-                await self.db.create_task(
-                    {
-                        "id": str(uuid4()),
-                        "product_id": source["product_id"],
-                        "title": "Review " + item["link"],
-                        "brief": item["content"],
-                        "status": "backlog",
-                        "origin": "routine",
-                        "routine_id": routine_id,
-                        "dedupe_key": key,
-                        "evidence": [{k: v for k, v in item.items() if k != "content"}],
-                        "session_id": str(uuid4()),
-                        "user_id": user_id,
-                        "transitions": [],
-                        "created_at": int(time.time()),
-                        "updated_at": None,
-                        "deleted_at": None,
-                    }
-                )
-            )
-        return tasks
+        fields = _proposal_fields(source_id, proposal, evidence)
+        return await self.db.create_task(
+            {
+                **fields,
+                "id": str(uuid4()),
+                "product_id": source["product_id"],
+                "status": "backlog",
+                "origin": "routine" if routine_id else "product_manager",
+                "routine_id": routine_id,
+                "session_id": str(uuid4()),
+                "user_id": user_id,
+                "transitions": [],
+                "created_at": int(time.time()),
+                "updated_at": None,
+                "deleted_at": None,
+            }
+        )
 
     async def summarize(self, product_id: str, run_id: str, interfaces: Any, user_id: Optional[str] = None):
         """Write the observed report to the wiki and deliver using Product configuration."""
         from agno.company.playbook import _require_owner
-        from agno.company.summary import adeliver_summary
-        from agno.utils.string import hash_string_sha256
+        from agno.company.summary import _summary_page, adeliver_summary
 
         product = await self.get(product_id)
         if product is None:
@@ -1119,18 +1110,17 @@ class AsyncCompanyManager:
         content += "\n\n" + "\n".join(f"- {task['title']}: {task['status']}" for task in rows)
         if not rows:
             content += "Quiet successful check: no work requires attention."
-        path = "summary-" + hash_string_sha256(run_id) + ".md"
+        path = "summary.md"
         try:
             existing = await self.read_wiki(product_id, path)
         except LookupError:
             existing = None
-        if existing is not None and existing.content.endswith("\n\nDelivered.\n"):
+        report, delivered, marker = _summary_page(existing.content if existing else "", run_id, content)
+        if delivered:
             return {"path": path, "delivered": True, "quiet": True}
-        if existing is None:
-            saved = await self.write_wiki(product_id, path, content, 0, user_id=user_id)
-        else:
-            saved = existing
-            content = existing.content
+        saved = await self.write_wiki(
+            product_id, path, report, existing.metadata.version if existing else 0, user_id=user_id
+        )
         await adeliver_summary(interfaces, delivery["interface"], delivery["destination"], content)
-        await self.write_wiki(product_id, path, content + "\n\nDelivered.\n", saved.version, user_id=user_id)
+        await self.write_wiki(product_id, path, report + marker, saved.version, user_id=user_id)
         return {"path": path, "delivered": True, "quiet": not rows}
