@@ -130,7 +130,21 @@ def get_company_runs_router(os: Any) -> APIRouter:
             raise HTTPException(409, "Task acceptance changed before automatic dispatch")
         component = executor(value)
         path = endpoint(value)
-        await _require_endpoint_permission(request, path, "POST", action="accept")
+        if observed is None:
+            await _require_endpoint_permission(request, path, "POST", action="accept")
+        else:
+            from agno.os.authz.run_context import request_authorization
+
+            # Recheck the saved accepting authority at the Task route boundary.
+            # Managed providers decide for that human, not the transport principal.
+            authority = request_authorization(request)
+            if authority is None and getattr(request.state, "authorization_enabled", False):
+                raise HTTPException(403, "Task acceptance has no saved caller authority")
+            if authority is not None:
+                try:
+                    await authority.arequire(value["executor_type"] + "s", "run", value["executor_id"])
+                except PermissionError as exc:
+                    raise HTTPException(403, str(exc)) from exc
         queue = worker(request)
         run_id = task_run_id(task_id, body.attempt)
         existing = await queue.store.get_job(run_id)

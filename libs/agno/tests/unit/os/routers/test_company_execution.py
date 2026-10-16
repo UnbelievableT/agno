@@ -318,3 +318,84 @@ def test_registry_mount_excludes_all_framework_executors(resource, executor_id):
     os = SimpleNamespace(registry=registry, agents=[], teams=[], workflows=[])
     _mount_executors(os)
     assert getattr(os, resource) == [ordinary]
+
+
+@pytest.fixture(params=[False, True], ids=["shared", "isolated"])
+def managed_system(request, tmp_path):
+    db = SqliteDb(db_file=str(tmp_path / "managed-company.db"))
+    authz = Authorization(db=db, verification_keys=[SECRET], algorithm="HS256")
+    authz.define_role("admin", ["agent_os:admin"])
+    authz.define_role("runner", SCOPES)
+    authz.define_role("viewer", [scope for scope in SCOPES if scope != "agents:writer:run"])
+    authz.seed(admin="root")
+    authz.assign("alice", "runner")
+    writer = Agent(id="writer", db=db)
+    os = AgentOS(
+        id="company-execution",
+        db=db,
+        registry=Registry(agents=[writer]),
+        company=CompanyConfig(),
+        telemetry=False,
+        user_isolation=request.param,
+        authorization=authz,
+    )
+    app = os.get_app()
+    queue = QueueWorker(InMemoryQueueStore(), lambda *a, **k: writer, QueueConfig(durable=True), authorization_app=app)
+    queue._company_db = db
+    app.state.queue_worker = queue
+    app.state.internal_service_token = "company-internal"
+    yield TestClient(app), db, os, queue, authz
+    db.close()
+
+
+@pytest.mark.asyncio
+async def test_automatic_pickup_uses_managed_accepting_identity(managed_system):
+    from agno.company.routines import _CompanyScheduleExecutor
+    from agno.os.auth import INTERNAL_SCHEDULER_USER_ID
+    from agno.os.authz.provider import AuthorizationContext
+
+    client, db, os, queue, authz = managed_system
+    path, task = accepted(client)
+    executor = _CompanyScheduleExecutor(
+        os, client.app, base_url="http://test", internal_service_token="company-internal"
+    )
+    # The transport principal deliberately has no managed role or run grant.
+    assert not await authz.provider.acheck(
+        AuthorizationContext(
+            principal_id=INTERNAL_SCHEDULER_USER_ID, resource_type="agents", resource_id="writer", action="run"
+        )
+    )
+    result = await executor._dispatch(db.get_task(task["id"]))
+    job = await queue.store.get_job(result["run_id"])
+    assert job["user_id"] == "alice"
+    assert client.get(path, headers=headers()).json()["status"] == "in_progress"
+
+
+@pytest.mark.asyncio
+async def test_automatic_pickup_rechecks_managed_grant_at_task_route(managed_system, monkeypatch):
+    from agno.company.routines import _CompanyScheduleExecutor
+    from agno.os.authz import run_context
+
+    client, db, os, queue, authz = managed_system
+    path, task = accepted(client)
+    executor = _CompanyScheduleExecutor(
+        os, client.app, base_url="http://test", internal_service_token="company-internal"
+    )
+    original = run_context.request_authorization
+    revoked = []
+
+    def revoke_after_transport_checks(request):
+        authority = original(request)
+        # The middleware has already admitted the Task route. Revoke the target
+        # grant when the run route re-reads authority, before it reserves work.
+        if request.scope.get("endpoint") is not None:
+            authz.set_role("alice", "viewer")
+            revoked.append(True)
+        return authority
+
+    monkeypatch.setattr(run_context, "request_authorization", revoke_after_transport_checks)
+    with pytest.raises(ValueError, match="Permission required: agents:writer:run"):
+        await executor._dispatch(db.get_task(task["id"]))
+    assert revoked
+    assert db.get_task(task["id"])["status"] == "ready"
+    assert db.get_task(task["id"])["job_id"] is None
