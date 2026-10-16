@@ -1,5 +1,61 @@
 # Test Log: Company Products
 
+## Heartbeat verification — October 16, 2026
+
+### 01_manage_products.py, 02_manage_projects.py, 03_manage_tasks.py
+
+**Status:** PASS
+
+**Description:** Ran all three files in `cookbook/05_agent_os/30_company/`
+with the Python 3.12 development environment and SQLite after adding Sources
+and scheduler-backed Routines.
+
+**Result:** Product isolation, soft deletion/restoration, Project lifecycle,
+and Task acceptance protection all passed without model calls.
+
+---
+
+### 04_manage_playbook.py, 05_product_manager.py
+
+**Status:** PASS
+
+**Description:** Ran both files in `cookbook/05_agent_os/30_company/`.
+The playbook exercised sync/async wiki writes and stale-version rejection.
+Product Manager exercised its bounded tools with trusted caller context.
+
+**Result:** Wiki, Backlog proposals, status and decisions persisted. No model
+or external messaging service was called.
+
+---
+
+### 06_execute_tasks.py
+
+**Status:** PASS
+
+**Description:** Ran `cookbook/05_agent_os/30_company/06_execute_tasks.py`
+with default SQLite Company storage and again with `COMPANY_DB=postgres`.
+Both used the local PostgreSQL durable queue and real application lifespan.
+
+**Result:** The workflow reached In review; the duplicate start returned the
+original run, and attention reported one In review item. Workers shut down
+cleanly and removed temporary schemas. No model calls were made.
+
+---
+
+### 07_heartbeat.py
+
+**Status:** PASS
+
+**Description:** Ran `cookbook/05_agent_os/30_company/07_heartbeat.py`.
+Startup rehydrated a declared Product, Markdown Source and Intake Routine.
+Repeated reader evidence returned the original Backlog Task. The example
+checked scheduler provenance, payload metadata, Product schedule ids and pause.
+
+**Result:** All assertions passed. The Routine is an ordinary scheduler row
+with `auto_accept=false`; no model or external message was sent.
+
+---
+
 ### 01_manage_products.py
 
 **Status:** PASS

@@ -2,7 +2,7 @@
 
 import asyncio
 from contextlib import asynccontextmanager
-from typing import Any
+from typing import Any, Optional
 from uuid import NAMESPACE_URL, uuid5
 
 from agno.company.declarations import Product
@@ -12,7 +12,9 @@ from agno.db.utils import is_unique_violation
 from agno.scheduler import ScheduleManager
 
 
-async def arehydrate_product(db: Any, product: Product, registry: Any = None, schedule_db: Any = None):
+async def arehydrate_product(
+    db: Any, product: Product, registry: Any = None, schedule_db: Any = None, scoped_user_id: Optional[str] = None
+):
     """Insert declared records once, repair interrupted linking, and retain later edits."""
     import time
 
@@ -41,6 +43,9 @@ async def arehydrate_product(db: Any, product: Product, registry: Any = None, sc
             row = await _call(db, "get_product", product_id, include_deleted=True)
     if row is None:
         raise RuntimeError("Product rehydration failed")
+    from agno.company.playbook import _require_owner
+
+    _require_owner(row, scoped_user_id)
     if row.get("deleted_at") is not None:
         return row
     # An existing owner remains authoritative; declarations never reassign ownership.
@@ -103,9 +108,13 @@ async def arehydrate_product(db: Any, product: Product, registry: Any = None, sc
     return row
 
 
-def rehydrate_product(db: Any, product: Product, registry: Any = None, schedule_db: Any = None):
+def rehydrate_product(
+    db: Any, product: Product, registry: Any = None, schedule_db: Any = None, scoped_user_id: Optional[str] = None
+):
     """Synchronous startup counterpart; use arehydrate_product inside an event loop."""
-    return asyncio.run(arehydrate_product(db, product, registry, schedule_db=schedule_db))
+    return asyncio.run(
+        arehydrate_product(db, product, registry, schedule_db=schedule_db, scoped_user_id=scoped_user_id)
+    )
 
 
 @asynccontextmanager

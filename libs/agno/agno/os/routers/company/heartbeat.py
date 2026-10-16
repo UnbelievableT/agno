@@ -215,6 +215,13 @@ def get_heartbeat_router(agent_os: Any) -> APIRouter:
             await product(rows[0]["id"], request)
             return rows[0]
         product_declaration = Product(**{**body.model_dump(), "id": "company-setup", "user_id": owner})
-        return await call(arehydrate_product, db, product_declaration, agent_os.registry, schedule_db=schedule_db)
+        return await call(
+            arehydrate_product,
+            db,
+            product_declaration,
+            agent_os.registry,
+            schedule_db=schedule_db,
+            scoped_user_id=get_scoped_user_id(request),
+        )
 
     return router

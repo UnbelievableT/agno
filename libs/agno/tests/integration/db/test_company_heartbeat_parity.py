@@ -109,6 +109,63 @@ async def test_source_paging_soft_delete_and_restart(heartbeat, tmp_path):
 
 
 @pytest.mark.asyncio
+async def test_setup_rechecks_owner_after_concurrent_product_insert(heartbeat, tmp_path, monkeypatch):
+    db, _, call = heartbeat
+    original = db.create_product
+    winner = Product(id="company-setup", name="First owner", user_id="alice")
+
+    async def raced(data):
+        # Another setup request wins between our empty read and insert.
+        monkeypatch.setattr(db, "create_product", original)
+        await arehydrate_product(db, winner)
+        return await original(data)
+
+    def raced_sync(data):
+        monkeypatch.setattr(db, "create_product", original)
+        original({**data, "user_id": "alice"})
+        return original(data)
+
+    monkeypatch.setattr(db, "create_product", raced if isinstance(db, AsyncBaseDb) else raced_sync)
+    loser = Product(
+        id="company-setup",
+        name="Other owner",
+        user_id="bob",
+        sources=[Source(type="markdown", reference=str(tmp_path / "private.md"))],
+    )
+    with pytest.raises(PermissionError):
+        await arehydrate_product(db, loser, scoped_user_id="bob")
+    assert (await call("list_sources"))[1] == 0
+
+
+def test_website_uses_existing_reader_and_hashes_extracted_content(monkeypatch):
+    import httpx
+
+    from agno.company.sources import read_source
+    from agno.utils.string import hash_string_sha256
+
+    requested = []
+
+    def page(url, **kwargs):
+        requested.append((url, kwargs))
+        return httpx.Response(
+            200,
+            request=httpx.Request("GET", url),
+            text="<nav>Navigation</nav><main>Released API</main><a href='/other'>Next</a>",
+        )
+
+    monkeypatch.setattr("httpx.get", page)
+    monkeypatch.setattr("agno.knowledge.reader.website_reader.WebsiteReader.delay", lambda self: None)
+    monkeypatch.setenv("DOCS_SECRET", "must-not-leave-diagnostics")
+    source = dict(id="web", type="website", reference="https://docs.example.test/release", credential_ref="DOCS_SECRET")
+    evidence = read_source(source, "web-run")
+    assert evidence[0]["content"] == "Released API"
+    assert evidence[0]["content_hash"] == hash_string_sha256("Released API")
+    assert evidence[0]["run_id"] == "web-run"
+    assert evidence[0]["link"] == source["reference"]
+    assert len(requested) == 1 and "must-not-leave-diagnostics" not in str(requested)
+
+
+@pytest.mark.asyncio
 async def test_summary_wiki_and_configured_transport(heartbeat, monkeypatch):
     db, manager, call = heartbeat
     delivery = AsyncMock()
