@@ -2,6 +2,28 @@
 
 ## Heartbeat verification — October 16, 2026
 
+### Latest execution-base verification
+
+**Status:** PASS
+
+**Description:** Merged execution branch head
+`41e7a104b48e891c2a53518589d6d8f677fddd5f` with a normal merge commit,
+retaining both execution and Heartbeat regression tests. Reran every Company
+cookbook and the PostgreSQL execution variant, all Company/scheduler integrations,
+and the complete database/OS/scheduler unit suites. A temporary localhost-only
+MongoDB container supported the existing Mongo unit and scheduler tests.
+
+**Result:** Full unit rerun: **6,270 passed, 47 conditional skips**. Final
+integrations: **261 passed, no skips**, including every SQLite/PostgreSQL case
+and scheduler MongoDB lifecycle parity. Focused Task/Heartbeat/provenance checks:
+**169 passed**; the subsequent setup identity regression passed all **10**
+Heartbeat route tests. Setup retries retain the original Product even after
+additional Products are created. All seven cookbooks and the extra PostgreSQL
+execution run passed. Format and validation passed, with both mypy results read.
+No live model or outbound messaging calls were made.
+
+---
+
 ### Required regression suites
 
 **Status:** PASS
@@ -380,5 +402,27 @@ and `executor_registered` checks, then executed to In review. The example
 revoked the authorization and cleaned up its temporary schema. No application
 check registration, provider calls, or external messages were needed. SQLite
 retains its documented development-only session fallback.
+
+---
+
+### Attention lifecycle and reserved executors — October 16, 2026
+
+**Status:** PASS
+
+**Description:** Added 56 cases: failure attention after cancellation, Backlog,
+reacceptance, review and completion; all four framework-reserved executor IDs
+at acceptance/start on all four SQL adapters; and reserved-ID exclusion during
+registry mounting. The initial run reproduced 38 failures, with 18 existing
+reserved-specialist protections already passing. Failed/nonfailed predicates
+now partition Tasks by active error state while retaining SQL/JSON null handling.
+
+**Result:** **253 targeted tests passed**, including all 56 new cases and the
+previous review regressions. Per-Product and company-wide attention clear handled
+failures, pagination totals remain correct, and error results remain intact as
+history. Product Manager and OS Manager are rejected explicitly even with a
+custom registry resolver. Reran `06_execute_tasks.py` with SQLite and
+`COMPANY_DB=postgres`; both completed with one Task In review. Format and
+validation passed, including both mypy checks, and their output was read. No
+provider calls were made. The earlier full unit-suite result remains the baseline.
 
 ---

@@ -295,3 +295,26 @@ async def test_routine_payload_cannot_grant_or_widen_authorization(system, monke
             CompanyManager(db, os.registry).transition_task(
                 task["id"], "ready", "self-accept", executor_type="agent", executor_id="writer"
             )
+
+
+@pytest.mark.parametrize(
+    "resource,executor_id",
+    [
+        ("agents", "product-manager-internal"),
+        ("teams", "os-manager-internal"),
+        ("agents", "platform-builder-internal"),
+        ("agents", "platform-manager-internal"),
+    ],
+)
+def test_registry_mount_excludes_all_framework_executors(resource, executor_id):
+    from types import SimpleNamespace
+
+    from agno.company.execution import _mount_executors
+
+    ordinary = SimpleNamespace(id="ordinary")
+    reserved = SimpleNamespace(id=executor_id)
+    registry = SimpleNamespace(agents=[], teams=[], workflows=[])
+    setattr(registry, resource, [ordinary, reserved])
+    os = SimpleNamespace(registry=registry, agents=[], teams=[], workflows=[])
+    _mount_executors(os)
+    assert getattr(os, resource) == [ordinary]
