@@ -4,9 +4,8 @@ import asyncio
 from pathlib import Path
 from typing import Any, Dict
 
-from agno.company.execution import _ExecutorAuthorization
 from agno.company.declarations import Routine
-from agno.company.execution import _validate_executor_tools
+from agno.company.execution import _ExecutorAuthorization, _validate_executor_tools
 from agno.db.schemas.scheduler import RUN_ENDPOINT_RE
 from agno.skills import LocalSkills, Skills
 
@@ -42,8 +41,6 @@ def _schedule_fields(product_id: str, routine: Routine, registry: Any) -> Dict[s
             "metadata": {"product_id": product_id, "template": routine.template, "auto_accept": False},
         },
     )
-
-
 
 
 class _RoutineAuthorization(_ExecutorAuthorization):

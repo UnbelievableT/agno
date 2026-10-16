@@ -11,13 +11,13 @@ import pytest_asyncio
 from sqlalchemy import text
 
 from agno.agent import Agent
-from agno.registry import Registry
 from agno.company import Product, Source
 from agno.company.bootstrap import arehydrate_product
 from agno.company.manager import AsyncCompanyManager, CompanyManager
 from agno.db.base import AsyncBaseDb
 from agno.db.postgres import AsyncPostgresDb, PostgresDb
 from agno.db.sqlite import AsyncSqliteDb, SqliteDb
+from agno.registry import Registry
 
 
 @pytest_asyncio.fixture(params=["sqlite", "async_sqlite", "postgres", "async_postgres"])
@@ -30,7 +30,11 @@ async def heartbeat(request, tmp_path):
         cls = AsyncSqliteDb if request.param.startswith("async") else SqliteDb
         db = cls(db_file=str(tmp_path / "heartbeat.db"))
     registry = Registry(agents=[Agent(id="reader", telemetry=False)])
-    manager = AsyncCompanyManager(db, registry=registry) if isinstance(db, AsyncBaseDb) else CompanyManager(db, registry=registry)
+    manager = (
+        AsyncCompanyManager(db, registry=registry)
+        if isinstance(db, AsyncBaseDb)
+        else CompanyManager(db, registry=registry)
+    )
 
     async def call(name, *args, **kwargs):
         fn = getattr(manager, name)

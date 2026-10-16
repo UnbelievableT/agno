@@ -15,5 +15,3 @@ class CompanyConfig:
     db: Optional[Union[BaseDb, AsyncBaseDb]] = None
     model: Optional[Model] = None
     products: List["Product"] = field(default_factory=list)
-
-

@@ -156,3 +156,68 @@ GET `/company/attention?product_id=...` returns `proposals`, `in_review` and
 Attention and run reads are company-wide with `tasks:read`; Task lists also
 accept `failed=true`. Existing databases add the Task execution columns with
 `MigrationManager(db).up(table_type="tasks")` (await this migration coroutine).
+
+
+## Heartbeat
+
+| File | Demonstrates |
+| --- | --- |
+| `07_heartbeat.py` | Code-declared Products, a reader Source, an Intake Skill, scheduler rows and duplicate-free scans without a model call. |
+
+Declare `Product`, `Source` and `Routine` from `agno.company`, then pass
+`CompanyConfig(products=[...])`. The same declarations work in OS configuration:
+
+```yaml
+company:
+  products:
+    - id: documentation
+      name: Documentation
+      purpose: Keep docs current
+      sources:
+        - type: markdown
+          reference: /workspace/docs
+          credential_ref: DOCS_ACCESS_TOKEN
+      routines:
+        - name: intake
+          template: intake
+          executor_type: agent
+          executor_id: source-reader
+          cron_expr: "0 9 * * 1-5"
+```
+
+The executor must already be registered. Give it `CompanyTools(db)` and
+`load_routine_skills()` if it should use the bundled reader, Intake and Summary
+tools. Enable the existing AgentOS scheduler and queue to run schedules; the
+cookbook only creates and inspects them. Scheduling never grants acceptance.
+The OS scheduler database owns Routine definitions/history even with a separate
+Company database. `metadata.routine_ids` links them to Products.
+
+The templates are packaged `SKILL.md` files under `agno/company/skills`, loaded
+through `LocalSkills`. Source types are `git` (a local checkout), `markdown` (a
+file or directory), and `website` (a single page). Optional `config.paths` limits
+local reads to relative files. Workspace exclusions and path confinement apply;
+credential references name environment variables, whose presence diagnostics
+report without disclosing values. Source reads produce evidence with the run id,
+a SHA-256 hash of reader content, and a link. Task deduplication is per Product,
+including completed and soft-deleted proposals. Failed reads create no proposals.
+
+`/company/routines` wraps the scheduler. Writes require both `routines:write`
+and `schedules:write`; histories require `routines:read` and `schedules:read`.
+Pause/resume use scheduler disable/enable. Sources use `sources:read`,
+`sources:write` and `sources:delete`, with Product ownership on writes.
+`POST /company/setup` uses `products:write` to seed a blank deployment; nested
+Sources and Routines also require their own write permissions. Retries and
+restarts retain existing edits and do not restore archived records.
+
+Summary uses Product metadata such as
+`{"summary": {"interface": "slack", "destination": "C012345"}}` and the matching
+interface configured on AgentOS. Pass those interfaces to `CompanyTools` for
+custom executors. The summary is written to the Product wiki before delivery;
+a transport failure remains a failed run with the report retained. Provider
+retry guarantees still apply if a process dies after sending but before recording
+success. No live messages are sent by this cookbook.
+
+Existing Task tables need the shared migration:
+`await MigrationManager(db).up(table_type="tasks")`. No Company-private storage
+or migration machinery is used. Automatic acceptance and automatic Task pickup
+are not enabled by this change.

@@ -4,8 +4,8 @@ import asyncio
 import inspect
 from typing import Any, Dict, Optional
 
-from fastapi.routing import APIRoute
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi.routing import APIRoute
 from pydantic import BaseModel, ConfigDict
 
 from agno.company.declarations import Product, Routine, Source

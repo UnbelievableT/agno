@@ -55,8 +55,15 @@ class CompanyTools(Toolkit):
     model. Like HTTP, service accounts remain scoped even with isolation off.
     """
 
-    def __init__(self, db: Any, *, user_isolation: bool = False, decision_tools: bool = True,
-                 agent_id: Optional[str] = None, interfaces: Any = None):
+    def __init__(
+        self,
+        db: Any,
+        *,
+        user_isolation: bool = False,
+        decision_tools: bool = True,
+        agent_id: Optional[str] = None,
+        interfaces: Any = None,
+    ):
         self.interfaces = interfaces or []
         self.db = db
         self.user_isolation = user_isolation
