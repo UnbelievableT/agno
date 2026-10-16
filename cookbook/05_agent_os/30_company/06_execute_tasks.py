@@ -144,6 +144,7 @@ if __name__ == "__main__":
                     )
                     routine.raise_for_status()
                     manager = CompanyManager(db, agent_os.registry)
+                    evidence = manager.read_source(source["id"], "cookbook-source-scan")
                     proposal = manager.intake(
                         source["id"],
                         "cookbook-source-scan",
@@ -151,7 +152,7 @@ if __name__ == "__main__":
                             "title": "Document the reviewed API",
                             "brief": "Explain the released API in the guide",
                             "proposal_key": "reviewed-api-guide",
-                            "evidence_links": [release.as_uri()],
+                            "evidence_links": [item["link"] for item in evidence],
                         },
                         routine_id=routine.json()["id"],
                         executor_type="workflow",
