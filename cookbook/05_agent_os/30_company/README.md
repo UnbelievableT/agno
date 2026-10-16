@@ -159,8 +159,8 @@ Attention and run reads are company-wide with `tasks:read`; Task lists also
 accept `failed=true`. Failed work means an In progress Task whose latest result
 is an error. Cancelling, replanning, reaccepting or reviewing the Task clears it
 from failed attention while preserving the result as history. `failed=false`
-includes all other Tasks, including those with no result. Existing databases add the Task execution columns with
-`MigrationManager(db).up(table_type="tasks")` (await this migration coroutine).
+includes all other Tasks, including those with no result. The Task table is
+created with its execution, evidence and result columns in the initial schema.
 
 
 ## Heartbeat
@@ -222,9 +222,8 @@ a transport failure remains a failed run with the report retained. Provider
 retry guarantees still apply if a process dies after sending but before recording
 success. No live messages are sent by this cookbook.
 
-Existing Task tables need the shared migration:
-`await MigrationManager(db).up(table_type="tasks")`. No Company-private storage
-or migration machinery is used. Automatic acceptance is opt-in as described below.
+Task evidence identity and deduplication are part of the initial Company schema.
+Automatic acceptance is opt-in as described below.
 
 
 ## Automation

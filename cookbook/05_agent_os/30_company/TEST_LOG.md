@@ -299,6 +299,42 @@ rerun for these focused fixes. Format and validation passed.
 
 ---
 
+
+### Async filesystem transaction review — October 16, 2026
+
+**Status:** PASS
+
+**Description:** Reran `01_manage_products.py`, `02_manage_projects.py`,
+`03_manage_tasks.py`, `04_manage_playbook.py`, and `05_product_manager.py`
+after fixing async SQLite outer transaction ownership.
+
+**Result:** All five cookbooks passed. Product/Project/Task lifecycle checks,
+sync/async wiki version conflicts, and bounded Product Manager proposal, status
+and decision writes passed. No provider calls were made.
+
+The focused filesystem review reproduced four failing cases: exception and
+cancellation after savepoint release persisted an async SQLite write on both
+file-backed and in-memory databases. Explicit outer BEGIN fixes all four while
+respecting caller-managed transaction hooks. The 33 new regression cases cover
+legacy migrations (missing/nullable user column), data and partition retention,
+partial DDL rollback, migration cancellation, partial-move rollback, cold-create
+cancellation and retry, and durable connection recovery after cancellation.
+All 33 passed on Python 3.10 and Python 3.12 with SQLite and PostgreSQL.
+
+Filesystem/context units and filesystem/Company integrations passed **1,082
+tests**, with no skips (includes the 33 cases above). Format and validation
+passed; all validation output, including both mypy summaries, was read.
+In-memory SQLite remains connection-owned: driver cancellation that invalidates
+its only connection discards the database; durable cancellation recovery is
+verified on file-backed SQLite and PostgreSQL.
+
+---
+
+Final full-suite rerun after this fix: **6,085 passed, 15 skipped** across
+`libs/agno/tests/unit/db` and `libs/agno/tests/unit/os`. The temporary MongoDB
+container was removed after the run; existing PostgreSQL services were retained.
+
+
 ### Execution and attention — October 16, 2026
 
 **Status:** PASS
@@ -457,5 +493,42 @@ Payload authority injection and internal-token-only Task submission are denied.
 Self-review reproduced a Routine Project proposal regression on all four
 adapters; its fix and the complete integration rerun passed. No live provider
 calls or outbound messages were made.
+
+---
+
+### Rebase onto merged Playbook — October 16, 2026
+
+**Status:** PASS
+
+**Description:** Rebased PR 4 onto `main` at
+`f801d7c7421e7a7da5d6cee42fd4b0b8bceabe98`, including the final Playbook async
+filesystem transaction fixes. Preserved both branches' test-log entries during
+the sole conflict. Commit and tree comparisons confirmed the execution changes
+were preserved and the inherited filesystem code matches main.
+
+**Result:** **286 targeted tests passed**: Company execution/Task regressions
+plus the 33 filesystem transaction cases from the merged base. All six Company
+cookbooks passed, and execution also passed with PostgreSQL session storage.
+Format and validation passed; both mypy checks and all script output were read.
+No provider calls were made. The full unit-suite figures above remain their
+historical baseline; this rebase used focused regression coverage.
+
+---
+
+### Initial Task schema — October 16, 2026
+
+**Status:** PASS
+
+**Description:** Removed the Company execution migration and its version
+registration because Company tables have not been released. Execution references,
+evidence and results remain part of the initial Task schema. Replaced the upgrade
+test with fresh custom-table creation and execution checks on sync/async SQLite
+and PostgreSQL. Restored the unrelated migration unit tests to their main versions.
+
+**Result:** **186 targeted tests passed**, covering execution, authorization,
+fresh Task schema/index creation and the restored migration suites. Both
+execution cookbook modes passed. Format and validation passed (mypy: 1,146 core
+files and 21 CLI files), and all output was read. No provider calls were made.
+Earlier migration test entries describe the implementation before this simplification.
 
 ---
