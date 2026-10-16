@@ -433,6 +433,10 @@ async def test_routine_intake_through_scheduler_and_durable_queue(system, tmp_pa
     rows, total = await _call(db, "get_tasks", product_id=product["id"])
     assert total == 1, first
     assert rows[0]["routine_id"] == routine["id"]
+    task_response = (await client.get("/company/tasks/" + rows[0]["id"])).json()
+    assert task_response["origin"] == "routine"
+    assert task_response["routine_id"] == routine["id"]
+    assert task_response["dedupe_key"] == rows[0]["dedupe_key"]
     assert rows[0]["evidence"][0]["run_id"] == first["run_id"]
     assert rows[0]["status"] == "backlog"
     second = await executor.execute(schedule, db, release_schedule=False)

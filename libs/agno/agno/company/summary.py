@@ -22,7 +22,10 @@ async def adeliver_summary(interfaces: Sequence[Any], interface_type: str, desti
 
         from agno.os.interfaces.telegram.helpers import send_message
 
-        bot = AsyncTeleBot(interface.token or os.getenv("TELEGRAM_TOKEN"))
+        token = interface.token or os.getenv("TELEGRAM_TOKEN")
+        if not token:
+            raise ValueError("Telegram interface token is not configured")
+        bot = AsyncTeleBot(token)
         try:
             await send_message(bot, int(destination), message)
         finally:
