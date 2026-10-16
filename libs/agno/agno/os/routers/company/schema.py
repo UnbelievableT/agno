@@ -103,6 +103,8 @@ class ProjectTransition(BaseModel):
 
 
 class TaskCreate(BaseModel):
+    executor_type: Optional[Literal["agent", "team", "workflow", "engineering"]] = None
+    executor_id: Optional[str] = Field(None, min_length=1)
     model_config = ConfigDict(extra="forbid")
     product_id: str = Field(..., min_length=1)
     title: str = Field(..., min_length=1)
@@ -119,6 +121,8 @@ class TaskCreate(BaseModel):
 
 
 class TaskUpdate(BaseModel):
+    executor_type: Optional[Literal["agent", "team", "workflow", "engineering"]] = None
+    executor_id: Optional[str] = Field(None, min_length=1)
     model_config = ConfigDict(extra="forbid")
     title: Optional[str] = None
     brief: Optional[str] = None
@@ -134,6 +138,13 @@ class TaskUpdate(BaseModel):
 
 
 class TaskResponse(BaseModel):
+    @field_validator("transitions", mode="before")
+    @classmethod
+    def public_transitions(cls, value):
+        from agno.db.schemas.tasks import public_task
+
+        return public_task({"transitions": value})["transitions"]
+
     product_id: str = Field(..., min_length=1)
     title: str = Field(..., min_length=1)
     brief: Optional[str] = None

@@ -6785,23 +6785,52 @@ class AsyncPostgresDb(AsyncBaseDb):
         accepted_by: Optional[str] = None,
         executor_type: Optional[str] = None,
         executor_id: Optional[str] = None,
+        expected_task: Optional[Dict[str, Any]] = None,
+        auto_accept: Optional[Dict[str, Any]] = None,
     ) -> Optional[Dict[str, Any]]:
         """Apply a lifecycle transition only if the observed state still matches."""
-        from agno.db.schemas.tasks import task_transition_fields
+        from agno.db.schemas.tasks import _acceptance_count, _task_scope_predicates, task_transition_fields
 
         table = await self._get_table(table_type="tasks")
         if table is None:
             return None
+        products = await self._get_table(table_type="products") if auto_accept else None
         stmt = select(table).where(table.c.id == task_id, table.c.deleted_at.is_(None))
         if user_id is not None:
             stmt = stmt.where(table.c.user_id == user_id)
         async with self.async_session_factory() as sess, sess.begin():
+            if auto_accept is not None:
+                if expected_task is None or products is None:
+                    raise ValueError("Automatic acceptance requires an observed Task and Product")
+                # Serialize acceptance budgets on the existing Product row, including
+                # on SQLite, before reading the Routine's lifetime acceptance history.
+                await sess.execute(
+                    products.update()
+                    .where(products.c.id == expected_task["product_id"])
+                    .values(updated_at=products.c.updated_at)
+                )
+                prior = (
+                    (
+                        await sess.execute(
+                            select(table.c.transitions).where(table.c.routine_id == auto_accept["routine_id"])
+                        )
+                    )
+                    .scalars()
+                    .all()
+                )
+                if _acceptance_count(prior, auto_accept["routine_id"]) >= auto_accept["max_acceptances"]:
+                    raise ValueError("Routine acceptance limit reached")
             row = (await sess.execute(stmt)).fetchone()
             if row is None:
                 return None
             existing = dict(row._mapping)
+            if expected_task is not None and existing != expected_task:
+                return None
             fields = task_transition_fields(existing, target, reason, accepted_by, executor_type, executor_id)
+            if auto_accept is not None:
+                fields["transitions"][-1]["auto_accept"] = auto_accept
             update = table.update().where(
+                *_task_scope_predicates(table, existing),
                 table.c.id == task_id,
                 table.c.deleted_at.is_(None),
                 table.c.status == existing["status"],

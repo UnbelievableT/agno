@@ -179,6 +179,11 @@ def get_schedule_router(
         if existing is not None:
             raise HTTPException(status_code=409, detail=f"Schedule with name '{body.name}' already exists")
 
+        payload = body.payload
+        if managed_by == "company":
+            from agno.company.routines import _stamp_auto_accept
+
+            payload = await _stamp_auto_accept(request, payload)
         next_run_at = compute_next_run(body.cron_expr, body.timezone)
         now = int(time.time())
 
@@ -188,7 +193,7 @@ def get_schedule_router(
             "description": body.description,
             "method": body.method,
             "endpoint": body.endpoint,
-            "payload": stamp_authorization(body.payload),
+            "payload": stamp_authorization(payload),
             "cron_expr": body.cron_expr,
             "timezone": body.timezone,
             "timeout_seconds": body.timeout_seconds,
@@ -309,6 +314,11 @@ def get_schedule_router(
             dup = await _db_call("get_schedule_by_name", updates["name"], user_id=scoped_user_id)
             if dup is not None:
                 raise HTTPException(status_code=409, detail=f"Schedule with name '{updates['name']}' already exists")
+
+        if existing.get("managed_by") == "company" and "payload" in updates:
+            from agno.company.routines import _stamp_auto_accept
+
+            updates["payload"] = await _stamp_auto_accept(request, updates["payload"])
 
         # Timing and descriptive edits must not replace the saved execution identity.
         # Only changes checked against the target above acquire the editor's authority.

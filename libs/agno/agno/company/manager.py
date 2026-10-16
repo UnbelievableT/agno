@@ -86,6 +86,7 @@ class CompanyManager:
         return self.db.create_project(
             {
                 **fields,
+                **_proposal_origin(),
                 "product_id": product_id,
                 "id": str(uuid4()),
                 "status": "proposed",
@@ -169,11 +170,20 @@ class CompanyManager:
         user_id: Optional[str] = None,
         scoped_user_id: Optional[str] = None,
         evidence: Optional[List[Dict[str, Any]]] = None,
+        executor_type: Optional[str] = None,
+        executor_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Create task work; scoped_user_id filters parents while user_id records the creator."""
         from agno.db.schemas.tasks import validate_task_fields
 
-        fields = {"title": title, "brief": brief, "project_id": project_id, "evidence": evidence}
+        fields = {
+            "title": title,
+            "brief": brief,
+            "project_id": project_id,
+            "evidence": evidence,
+            "executor_type": executor_type,
+            "executor_id": executor_id,
+        }
         validate_task_fields(fields)
         if self.db.get_product(product_id, user_id=scoped_user_id) is None:
             raise LookupError("Product not found")
@@ -186,6 +196,7 @@ class CompanyManager:
         return self.db.create_task(
             {
                 **fields,
+                **_proposal_origin(),
                 "product_id": product_id,
                 "id": str(uuid4()),
                 "status": "backlog",
@@ -266,6 +277,8 @@ class CompanyManager:
         accepted_by: Optional[str] = None,
         executor_type: Optional[str] = None,
         executor_id: Optional[str] = None,
+        expected_task: Optional[Dict[str, Any]] = None,
+        auto_accept: Optional[Dict[str, Any]] = None,
     ) -> Optional[Dict[str, Any]]:
         """Apply an explicit transition; the caller enforces platform authorization."""
         from agno.company.routines import _RoutineAuthorization
@@ -285,6 +298,8 @@ class CompanyManager:
             accepted_by=accepted_by,
             executor_type=executor_type,
             executor_id=executor_id,
+            expected_task=expected_task,
+            auto_accept=auto_accept,
         )
 
     def start_task_run(
@@ -511,7 +526,7 @@ class CompanyManager:
                         "brief": item["content"],
                         "status": "backlog",
                         "origin": "routine",
-                        "routine_id": routine_id,
+                        "routine_id": _proposal_origin().get("routine_id", routine_id),
                         "dedupe_key": key,
                         "evidence": [{k: v for k, v in item.items() if k != "content"}],
                         "session_id": str(uuid4()),
@@ -648,6 +663,7 @@ class AsyncCompanyManager:
         return await self.db.create_project(
             {
                 **fields,
+                **_proposal_origin(),
                 "product_id": product_id,
                 "id": str(uuid4()),
                 "status": "proposed",
@@ -731,11 +747,20 @@ class AsyncCompanyManager:
         user_id: Optional[str] = None,
         scoped_user_id: Optional[str] = None,
         evidence: Optional[List[Dict[str, Any]]] = None,
+        executor_type: Optional[str] = None,
+        executor_id: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Create task work; scoped_user_id filters parents while user_id records the creator."""
         from agno.db.schemas.tasks import validate_task_fields
 
-        fields = {"title": title, "brief": brief, "project_id": project_id, "evidence": evidence}
+        fields = {
+            "title": title,
+            "brief": brief,
+            "project_id": project_id,
+            "evidence": evidence,
+            "executor_type": executor_type,
+            "executor_id": executor_id,
+        }
         validate_task_fields(fields)
         if await self.db.get_product(product_id, user_id=scoped_user_id) is None:
             raise LookupError("Product not found")
@@ -748,6 +773,7 @@ class AsyncCompanyManager:
         return await self.db.create_task(
             {
                 **fields,
+                **_proposal_origin(),
                 "product_id": product_id,
                 "id": str(uuid4()),
                 "status": "backlog",
@@ -828,6 +854,8 @@ class AsyncCompanyManager:
         accepted_by: Optional[str] = None,
         executor_type: Optional[str] = None,
         executor_id: Optional[str] = None,
+        expected_task: Optional[Dict[str, Any]] = None,
+        auto_accept: Optional[Dict[str, Any]] = None,
     ) -> Optional[Dict[str, Any]]:
         """Apply an explicit transition; the caller enforces platform authorization."""
         from agno.company.routines import _RoutineAuthorization
@@ -847,6 +875,8 @@ class AsyncCompanyManager:
             accepted_by=accepted_by,
             executor_type=executor_type,
             executor_id=executor_id,
+            expected_task=expected_task,
+            auto_accept=auto_accept,
         )
 
     async def start_task_run(
@@ -1077,7 +1107,7 @@ class AsyncCompanyManager:
                         "brief": item["content"],
                         "status": "backlog",
                         "origin": "routine",
-                        "routine_id": routine_id,
+                        "routine_id": _proposal_origin().get("routine_id", routine_id),
                         "dedupe_key": key,
                         "evidence": [{k: v for k, v in item.items() if k != "content"}],
                         "session_id": str(uuid4()),
@@ -1134,3 +1164,13 @@ class AsyncCompanyManager:
         await adeliver_summary(interfaces, delivery["interface"], delivery["destination"], content)
         await self.write_wiki(product_id, path, content + "\n\nDelivered.\n", saved.version, user_id=user_id)
         return {"path": path, "delivered": True, "quiet": not rows}
+
+
+def _proposal_origin():
+    from agno.company.routines import _RoutineAuthorization
+    from agno.run.authorization import current_authorization
+
+    authority = current_authorization()
+    if isinstance(authority, _RoutineAuthorization) and authority.routine_id:
+        return {"origin": "routine", "routine_id": authority.routine_id}
+    return {}

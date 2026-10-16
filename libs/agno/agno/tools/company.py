@@ -39,7 +39,10 @@ async def _apermission(resource, action, run_context):
 
 def _page(result, limit, page):
     rows, total = result
-    return json.dumps(
+    from agno.db.schemas.tasks import public_task
+
+    rows = [public_task(row) if isinstance(row, dict) and "transitions" in row else row for row in rows]
+    return _public_json(
         {
             "data": rows,
             "meta": {"page": page, "limit": limit, "total_count": total, "total_pages": (total + limit - 1) // limit},
@@ -132,7 +135,7 @@ class CompanyTools(Toolkit):
         product = self._sync().get(product_id)
         if product is None:
             raise LookupError("Product not found")
-        return json.dumps(product)
+        return _public_json(product)
 
     @requires_permission()
     def list_company_projects(
@@ -162,7 +165,7 @@ class CompanyTools(Toolkit):
         """Propose a Project for human review; never activate or complete it."""
         _permission("projects", "write", _agno_run_context)
         self._scoped_user(_agno_run_context)
-        return json.dumps(
+        return _public_json(
             self._sync().create_project(product_id, name, outcome=outcome, user_id=_identity(_agno_run_context))
         )
 
@@ -173,14 +176,22 @@ class CompanyTools(Toolkit):
         title: str,
         brief: Optional[str] = None,
         project_id: Optional[str] = None,
+        executor_type: Optional[str] = None,
+        executor_id: Optional[str] = None,
         _agno_run_context: Optional[Any] = None,
     ) -> str:
         """Create Backlog work for a human to accept and choose an executor."""
         _permission("tasks", "write", _agno_run_context)
         self._scoped_user(_agno_run_context)
-        return json.dumps(
+        return _public_json(
             self._sync().create_task(
-                product_id, title, brief=brief, project_id=project_id, user_id=_identity(_agno_run_context)
+                product_id,
+                title,
+                brief=brief,
+                project_id=project_id,
+                user_id=_identity(_agno_run_context),
+                executor_type=executor_type,
+                executor_id=executor_id,
             )
         )
 
@@ -198,7 +209,7 @@ class CompanyTools(Toolkit):
         _require_owner(row, user)
         if row["status"] != "proposed":
             raise ValueError("Only proposed Projects may be edited by Company tools")
-        return json.dumps(
+        return _public_json(
             manager.update_project(project_id, user_id=user, expected_status="proposed", name=name, outcome=outcome)
         )
 
@@ -212,7 +223,7 @@ class CompanyTools(Toolkit):
             raise LookupError("Task not found")
         user = self._scoped_user(_agno_run_context)
         _require_owner(row, user)
-        return json.dumps(manager.update_task(task_id, user_id=user, title=title, brief=brief))
+        return _public_json(manager.update_task(task_id, user_id=user, title=title, brief=brief))
 
     @requires_permission()
     def list_company_wiki(
@@ -229,7 +240,7 @@ class CompanyTools(Toolkit):
     ) -> str:
         """Read a playbook page and its version before planning or editing."""
         _permission("wiki", "read", _agno_run_context)
-        return json.dumps(asdict(self._sync().read_wiki(product_id, path)))
+        return _public_json(asdict(self._sync().read_wiki(product_id, path)))
 
     @requires_permission()
     def update_company_status(
@@ -237,7 +248,7 @@ class CompanyTools(Toolkit):
     ) -> str:
         """Update status.md after reading it; supply the version read to prevent lost edits."""
         _permission("wiki", "write", _agno_run_context)
-        return json.dumps(
+        return _public_json(
             asdict(
                 self._sync().write_wiki(
                     product_id, "status.md", content, expected_version, user_id=self._scoped_user(_agno_run_context)
@@ -257,7 +268,7 @@ class CompanyTools(Toolkit):
         """Append a decision with reasoning, context and observed outcome to the learning log."""
         _permission("decisions", "write", _agno_run_context)
         self._scoped_user(_agno_run_context)
-        return json.dumps(
+        return _public_json(
             asdict(
                 self._sync().log_decision(
                     decision,
@@ -302,7 +313,7 @@ class CompanyTools(Toolkit):
         product = await self._async().get(product_id)
         if product is None:
             raise LookupError("Product not found")
-        return json.dumps(product)
+        return _public_json(product)
 
     @requires_permission()
     async def alist_company_projects(
@@ -334,7 +345,7 @@ class CompanyTools(Toolkit):
         """Propose a Project for human review; never activate or complete it."""
         await _apermission("projects", "write", _agno_run_context)
         self._scoped_user(_agno_run_context)
-        return json.dumps(
+        return _public_json(
             await self._async().create_project(product_id, name, outcome=outcome, user_id=_identity(_agno_run_context))
         )
 
@@ -345,14 +356,22 @@ class CompanyTools(Toolkit):
         title: str,
         brief: Optional[str] = None,
         project_id: Optional[str] = None,
+        executor_type: Optional[str] = None,
+        executor_id: Optional[str] = None,
         _agno_run_context: Optional[Any] = None,
     ) -> str:
         """Create Backlog work for a human to accept and choose an executor."""
         await _apermission("tasks", "write", _agno_run_context)
         self._scoped_user(_agno_run_context)
-        return json.dumps(
+        return _public_json(
             await self._async().create_task(
-                product_id, title, brief=brief, project_id=project_id, user_id=_identity(_agno_run_context)
+                product_id,
+                title,
+                brief=brief,
+                project_id=project_id,
+                user_id=_identity(_agno_run_context),
+                executor_type=executor_type,
+                executor_id=executor_id,
             )
         )
 
@@ -370,7 +389,7 @@ class CompanyTools(Toolkit):
         _require_owner(row, user)
         if row["status"] != "proposed":
             raise ValueError("Only proposed Projects may be edited by Company tools")
-        return json.dumps(
+        return _public_json(
             await manager.update_project(
                 project_id, user_id=user, expected_status="proposed", name=name, outcome=outcome
             )
@@ -388,7 +407,7 @@ class CompanyTools(Toolkit):
             raise LookupError("Task not found")
         user = self._scoped_user(_agno_run_context)
         _require_owner(row, user)
-        return json.dumps(await manager.update_task(task_id, user_id=user, title=title, brief=brief))
+        return _public_json(await manager.update_task(task_id, user_id=user, title=title, brief=brief))
 
     @requires_permission()
     async def alist_company_wiki(
@@ -405,7 +424,7 @@ class CompanyTools(Toolkit):
     ) -> str:
         """Read a playbook page and its version before planning or editing."""
         await _apermission("wiki", "read", _agno_run_context)
-        return json.dumps(asdict(await self._async().read_wiki(product_id, path)))
+        return _public_json(asdict(await self._async().read_wiki(product_id, path)))
 
     @requires_permission()
     async def aupdate_company_status(
@@ -413,7 +432,7 @@ class CompanyTools(Toolkit):
     ) -> str:
         """Update status.md after reading it; supply the version read to prevent lost edits."""
         await _apermission("wiki", "write", _agno_run_context)
-        return json.dumps(
+        return _public_json(
             asdict(
                 await self._async().write_wiki(
                     product_id, "status.md", content, expected_version, user_id=self._scoped_user(_agno_run_context)
@@ -433,7 +452,7 @@ class CompanyTools(Toolkit):
         """Append a decision with reasoning, context and observed outcome to the learning log."""
         await _apermission("decisions", "write", _agno_run_context)
         self._scoped_user(_agno_run_context)
-        return json.dumps(
+        return _public_json(
             asdict(
                 await self._async().log_decision(
                     decision,
@@ -486,7 +505,7 @@ class CompanyTools(Toolkit):
         """Read a configured Source with this run's content hashes and links; never credentials."""
         _permission("sources", "read", _agno_run_context)
         run_id = self._source_context(source_id, _agno_run_context)
-        return json.dumps(self._sync().read_source(source_id, run_id))
+        return _public_json(self._sync().read_source(source_id, run_id))
 
     @requires_permission()
     def intake_company_source(self, source_id: str, _agno_run_context: Optional[Any] = None) -> str:
@@ -495,7 +514,7 @@ class CompanyTools(Toolkit):
         _permission("tasks", "write", _agno_run_context)
         self._scoped_user(_agno_run_context)
         run_id = self._source_context(source_id, _agno_run_context)
-        return json.dumps(
+        return _public_json(
             self._sync().intake(
                 source_id,
                 run_id,
@@ -511,7 +530,7 @@ class CompanyTools(Toolkit):
         _permission("tasks", "read", _agno_run_context)
         _permission("wiki", "write", _agno_run_context)
         run_id = self._source_context(product_id, _agno_run_context)
-        return json.dumps(
+        return _public_json(
             self._sync().summarize(product_id, run_id, self.interfaces, user_id=self._scoped_user(_agno_run_context))
         )
 
@@ -533,7 +552,7 @@ class CompanyTools(Toolkit):
         """Read a configured Source with this run's content hashes and links; never credentials."""
         await _apermission("sources", "read", _agno_run_context)
         run_id = self._source_context(source_id, _agno_run_context)
-        return json.dumps(await self._async().read_source(source_id, run_id))
+        return _public_json(await self._async().read_source(source_id, run_id))
 
     @requires_permission()
     async def aintake_company_source(self, source_id: str, _agno_run_context: Optional[Any] = None) -> str:
@@ -542,7 +561,7 @@ class CompanyTools(Toolkit):
         await _apermission("tasks", "write", _agno_run_context)
         self._scoped_user(_agno_run_context)
         run_id = self._source_context(source_id, _agno_run_context)
-        return json.dumps(
+        return _public_json(
             await self._async().intake(
                 source_id,
                 run_id,
@@ -558,7 +577,7 @@ class CompanyTools(Toolkit):
         await _apermission("tasks", "read", _agno_run_context)
         await _apermission("wiki", "write", _agno_run_context)
         run_id = self._source_context(product_id, _agno_run_context)
-        return json.dumps(
+        return _public_json(
             await self._async().summarize(
                 product_id, run_id, self.interfaces, user_id=self._scoped_user(_agno_run_context)
             )
@@ -576,3 +595,17 @@ class _AsyncSyncManager:
             return await asyncio.to_thread(getattr(self.manager, name), *args, **kwargs)
 
         return call
+
+
+def _public_json(value, **kwargs):
+    from agno.run.authorization import AUTHORIZATION_KEY
+
+    def clean(item):
+        if isinstance(item, dict):
+            return {key: clean(child) for key, child in item.items()
+                    if key not in {AUTHORIZATION_KEY, "_agno_company_acceptance"}}
+        if isinstance(item, list):
+            return [clean(child) for child in item]
+        return item
+
+    return json.dumps(clean(value), **kwargs)

@@ -33,6 +33,14 @@ async def _run_route(
     """
     body = urlencode(form or {}).encode()
     headers = [(k, v) for k, v in request.scope["headers"] if k.lower() in {b"authorization", b"cookie", b"x-api-key"}]
+    if getattr(request.state, "is_internal_service", False):
+        from agno.run.authorization import AUTHORIZATION_HEADER
+
+        headers += [
+            (k, v)
+            for k, v in request.scope["headers"]
+            if k.lower() in {AUTHORIZATION_HEADER.lower().encode(), b"x-schedule-owner"}
+        ]
     headers += [(b"content-type", b"application/x-www-form-urlencoded"), (b"content-length", str(len(body)).encode())]
     if key:
         headers.append((b"idempotency-key", key.encode()))
@@ -115,6 +123,11 @@ def get_company_runs_router(os: Any) -> APIRouter:
     @router.post("/tasks/{task_id}/runs", status_code=202)
     async def start(task_id: str, request: Request, body: TaskRunCreate = TaskRunCreate(), _: bool = Depends(auth)):
         value = await task(task_id)
+        from agno.company.execution import _automatic_task
+
+        observed = _automatic_task.get()
+        if observed is not None and value != observed:
+            raise HTTPException(409, "Task acceptance changed before automatic dispatch")
         component = executor(value)
         path = endpoint(value)
         await _require_endpoint_permission(request, path, "POST", action="accept")

@@ -1971,6 +1971,8 @@ class BaseDb(ABC):
         accepted_by: Optional[str] = None,
         executor_type: Optional[str] = None,
         executor_id: Optional[str] = None,
+        expected_task: Optional[Dict[str, Any]] = None,
+        auto_accept: Optional[Dict[str, Any]] = None,
     ) -> Optional[Dict[str, Any]]:
         """Transition a visible task with a reason, recording acceptance for Tasks."""
         raise NotImplementedError("Company tasks not supported by the configured database")
@@ -3871,6 +3873,8 @@ class AsyncBaseDb(ABC):
         accepted_by: Optional[str] = None,
         executor_type: Optional[str] = None,
         executor_id: Optional[str] = None,
+        expected_task: Optional[Dict[str, Any]] = None,
+        auto_accept: Optional[Dict[str, Any]] = None,
     ) -> Optional[Dict[str, Any]]:
         """Transition a visible task with a reason, recording acceptance for Tasks."""
         raise NotImplementedError("Company tasks not supported by the configured database")

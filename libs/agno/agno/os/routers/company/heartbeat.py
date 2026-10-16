@@ -2,13 +2,13 @@
 
 import asyncio
 import inspect
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Literal, Optional, Union
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.routing import APIRoute
 from pydantic import BaseModel, ConfigDict
 
-from agno.company.declarations import Product, Routine, Source
+from agno.company.declarations import AutoAccept, Product, Routine, Source
 from agno.company.manager import AsyncCompanyManager, CompanyManager
 from agno.company.routines import _schedule_fields
 from agno.db.base import AsyncBaseDb
@@ -34,7 +34,7 @@ class RoutineUpdate(BaseModel):
     instructions: Optional[str] = None
     cron_expr: Optional[str] = None
     timezone: Optional[str] = None
-    auto_accept: Optional[bool] = None
+    auto_accept: Optional[Union[Literal[False], AutoAccept]] = None
 
 
 class Setup(Product):
@@ -80,7 +80,7 @@ def get_heartbeat_router(agent_os: Any) -> APIRouter:
 
     async def routine(routine_id, request):
         row = await call(handlers["get_schedule"], routine_id, request)
-        if row.get("managed_by") != "company":
+        if row.get("managed_by") != "company" or not (row.get("payload") or {}).get("metadata", {}).get("product_id"):
             raise HTTPException(404, "Routine not found")
         return row
 
@@ -144,6 +144,7 @@ def get_heartbeat_router(agent_os: Any) -> APIRouter:
             row.to_dict()
             for row in rows
             if row.managed_by == "company"
+            and (row.payload or {}).get("metadata", {}).get("product_id")
             and (product_id is None or (row.payload or {}).get("metadata", {}).get("product_id") == product_id)
         ]
         return page_response(selected[(page - 1) * limit : page * limit], len(selected), limit, page)
@@ -152,6 +153,12 @@ def get_heartbeat_router(agent_os: Any) -> APIRouter:
     async def create_routine(body: RoutineCreate, request: Request, _: bool = Depends(auth)):
         await product(body.product_id, request)
         fields = await call(_schedule_fields, body.product_id, body, agent_os.registry)
+        if body.auto_accept:
+            from agno.company.routines import _authorize_auto_accept
+
+            policy = body.auto_accept.model_dump()
+            await _authorize_auto_accept(request, policy, agent_os)
+            fields["payload"]["metadata"]["auto_accept"] = policy
         row = await call(handlers["create_schedule"], ScheduleCreate(**fields), request)
         await call(db.add_product_routine, body.product_id, row["id"])
         return row
@@ -163,10 +170,14 @@ def get_heartbeat_router(agent_os: Any) -> APIRouter:
         updates: Dict[str, Any] = body.model_dump(exclude_unset=True)
         if any(value is None for value in updates.values()):
             raise HTTPException(422, "Routine fields cannot be null")
-        if updates.pop("auto_accept", False):
-            raise HTTPException(422, "Automatic acceptance is not available")
+        if "auto_accept" in updates:
+            from agno.company.routines import _authorize_auto_accept
+
+            policy = updates.pop("auto_accept")
+            await _authorize_auto_accept(request, policy, agent_os)
+            updates["payload"] = {**row["payload"], "metadata": {**row["payload"]["metadata"], "auto_accept": policy}}
         if "instructions" in updates:
-            updates["payload"] = {**row["payload"], "message": updates.pop("instructions")}
+            updates["payload"] = {**updates.get("payload", row["payload"]), "message": updates.pop("instructions")}
         return await call(handlers["update_schedule"], routine_id, ScheduleUpdate(**updates), request)
 
     @router.post("/routines/{routine_id}/pause")

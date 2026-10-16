@@ -15,9 +15,20 @@ TASK_TRANSITIONS = {
 
 def validate_task_fields(fields: Dict[str, Any]) -> None:
     """Identity, acceptance and lifecycle are never descriptive edits."""
-    unknown = set(fields) - {"title", "brief", "project_id", "evidence"}
+    unknown = set(fields) - {"title", "brief", "project_id", "evidence", "executor_type", "executor_id"}
     if unknown:
         raise ValueError(f"Unsupported task fields: {sorted(unknown)}")
+    if fields.get("executor_type") is not None and fields["executor_type"] not in {
+        "agent",
+        "team",
+        "workflow",
+        "engineering",
+    }:
+        raise ValueError("Invalid proposed executor type")
+    if fields.get("executor_id") is not None and (
+        not isinstance(fields["executor_id"], str) or not fields["executor_id"].strip()
+    ):
+        raise ValueError("Invalid proposed executor id")
     if fields.get("evidence") is not None and not isinstance(fields["evidence"], list):
         raise ValueError("evidence must be a list or None")
     if "title" in fields and (not isinstance(fields["title"], str) or not fields["title"].strip()):
@@ -61,7 +72,23 @@ def task_transition_fields(
         *(existing.get("transitions") or []),
         {"from": existing["status"], "target": target, "reason": reason, "user_id": accepted_by, "created_at": now},
     ]
+    if target == "ready":
+        from agno.run.authorization import AUTHORIZATION_KEY, authorization_snapshot
+
+        fields["transitions"][-1][AUTHORIZATION_KEY] = authorization_snapshot()
     return fields
+
+
+def public_task(task: Dict[str, Any]) -> Dict[str, Any]:
+    """Keep persisted caller claims out of API and tool results."""
+    from agno.run.authorization import AUTHORIZATION_KEY
+
+    return {
+        **task,
+        "transitions": [
+            {k: v for k, v in entry.items() if k != AUTHORIZATION_KEY} for entry in task.get("transitions", [])
+        ],
+    }
 
 
 def task_run_id(task_id: str, attempt: int) -> str:
@@ -107,3 +134,22 @@ def task_run_fields(
             },
         ],
     }
+
+
+def _acceptance_count(histories, routine_id):
+    return sum(
+        1
+        for history in histories
+        for entry in (history or [])
+        if entry.get("target") == "ready" and (entry.get("auto_accept") or {}).get("routine_id") == routine_id
+    )
+
+
+def _task_scope_predicates(table, task):
+    from sqlalchemy import bindparam
+
+    # JSON null is a JSON value, distinct from SQL NULL. A typed parameter
+    # preserves the adapter's JSON encoding for the evidence comparison.
+    return [
+        table.c[name] == task.get(name) for name in ("title", "brief", "project_id", "executor_type", "executor_id")
+    ] + [table.c.evidence == bindparam("observed_evidence", task.get("evidence"), type_=table.c.evidence.type)]
