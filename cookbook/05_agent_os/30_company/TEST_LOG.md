@@ -2,7 +2,7 @@
 
 ## Heartbeat review fixes — October 16, 2026
 
-**Status:** PASS (focused checks, integration suites, scripts and cookbooks); full unit rerun in progress.
+**Status:** PASS
 
 **Description:** Added regressions for Product identity in actual scheduler/queue model messages,
 Source-only read authorization, binary/oversized repository files, explicit-file failures,
@@ -10,11 +10,17 @@ interrupted setup creation/linking, preserved edits and tombstones, selective pr
 unchanged issue identity across evidence edits, summary retries and one versioned page,
 bounded Product Manager tools, and strict YAML declarations.
 
-**Result:** 53 focused Company tests and 350 Company/scheduler/filesystem integrations passed,
+**Result:** Full database/OS/scheduler unit suites: **6,287 passed, 39 conditional skips**.
+After the final missing-Source guard, reran **53 focused Company tests**, all **350
+Company/scheduler/filesystem integrations**, and all eight cookbook executions successfully,
 with all four SQLite/PostgreSQL Company adapters exercised. Compilation, format and validation
 passed; complete output read, including mypy on 1,153 framework and 21 CLI files.
 Existing local PostgreSQL, MongoDB and Redis services were reused without altering them.
-No live model or outbound messages were used.
+No live model or outbound messages were used. A real cookbook repository Source scan
+read 3,268 documents and recorded 21 skipped binary/oversized paths, including PNGs.
+The final guard also proves a disappeared configured file cannot become a parent-directory scan.
+Skips were optional Firestore/Mongo/MySQL/asyncpg dependencies, root-only behavior,
+or live OpenAI credentials.
 
 ### 01_manage_products.py
 
@@ -649,5 +655,54 @@ cases ran. All ten cookbook executions passed again. Full format and validation
 passed, including mypy on 1,153 core and 21 CLI files; output was read.
 Unrelated formatter-only edits were excluded and exact-tree validation passed.
 No live provider calls or outbound messages were made.
+
+---
+
+### Automation managed-role review fix — October 16, 2026
+
+**Status:** PASS
+
+**Description:** Reproduced automatic pickup's managed-role 403 with isolation
+both enabled and disabled. The Task run route now checks the restored accepting
+human's current executor permission before reserving work. Four regressions
+cover successful pickup without a scheduler-principal grant and revocation
+between transport admission and Task reservation. All 27 execution router tests
+passed; the combined Company unit selection passed 51 tests.
+
+Integrated Heartbeat through `65af6a10a698603232ae98056b49baeb955e4dca`
+with normal merge commits. Explicit, evidence-backed intake retains proposed
+executor and Project fields and trusted Routine lineage. Added coverage on all
+four SQL adapters for those fields and cross-Product rejection. The execution
+cookbook now uses canonical evidence links returned by the Source reader.
+
+**Result:** Full DB/OS/scheduler unit suites passed **6,329 tests, 7 conditional
+skips** (optional mockfirestore, mongomock and aiomysql dependencies, one root-only
+test and three live-provider tests). The first attempt encountered eight Redis
+connection failures when the shared service stopped; the complete rerun passed
+with dedicated temporary Redis and MongoDB services. Telebot-dependent tests ran.
+
+After the final two-line parent Source-existence guard, reran all Company units
+and the complete integration selection: **457 passed**, comprising **51 Company
+unit tests and 406 integrations**, with four optional MongoDB scheduler skips.
+Every requested sync/async SQLite/PostgreSQL case ran, including scheduler owner
+checks and 33 filesystem transaction cases.
+
+All ten cookbook executions passed again on the final parent:
+
+- `01_manage_products.py`: PASS — Product lifecycle and isolation.
+- `02_manage_projects.py`: PASS — Project lifecycle.
+- `03_manage_tasks.py`: PASS — Task lifecycle and accepted scope protection.
+- `04_manage_playbook.py`: PASS — Sync/async wiki edits and stale-write rejection.
+- `05_product_manager.py`: PASS — Backlog proposal, status and decision.
+- `06_execute_tasks.py`: PASS — SQLite and PostgreSQL manual execution;
+  SQLite and PostgreSQL automatic pickup, bounded acceptance and revocation.
+- `07_heartbeat.py`: PASS — Explicit proposal deduplication and paused scheduling.
+
+The first automation cookbook attempt after the intake API update rejected a
+noncanonical temporary-file URI. Using the reader's returned evidence links
+fixed it; all ten executions passed on rerun. Format and validation passed with
+all output read (mypy: 1,153 core and 21 CLI files). Unrelated formatter changes
+were excluded and exact-tree validation repeated. No live provider calls or
+outbound messages were made.
 
 ---

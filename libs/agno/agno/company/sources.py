@@ -23,6 +23,8 @@ def _documents(source: Dict[str, Any]) -> List[Document]:
     from agno.knowledge.reader.markdown_reader import MarkdownReader
 
     root = Path(reference).expanduser().resolve()
+    if not root.exists():
+        raise ValueError("Source root is unavailable")
     provider = WorkspaceContextProvider(root=root if root.is_dir() else root.parent, mode=ContextMode.tools)
     if not provider.status().ok:
         raise ValueError("Source root is unavailable")
