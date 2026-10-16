@@ -1,0 +1,27 @@
+# TopxAI Tests
+
+Run on 2026-10-16 against `https://ai.topxea.com/v1` with a TopxAI key, model `kimi-k3`, macOS, Python 3.12.
+
+### basic.py
+
+**Status:** PASS (sync, sync streaming, async); see note for async streaming
+
+**Description:** Basic TopxAI model cookbook covering sync, streaming, async, and async streaming agent responses.
+
+**Result:** The first three sections returned complete responses (22.2s, 17.1s, 31.2s). The fourth section, run as the second `asyncio.run()` in the same process, failed with `Event loop is closed` from the reused async client. Run on its own in a fresh process, the same async streaming call completed (28.2s), and `Agent(model="topxai:kimi-k3")` resolved to `Topxai` and answered.
+
+---
+
+### tool_use.py
+
+**Status:** PASS (sync, sync streaming, async); see note for async streaming
+
+**Description:** Agent with `WebSearchTools()` covering sync, streaming, async, and async streaming tool calls.
+
+**Result:** The first three sections made tool calls (`search_news` three times, `web_search` once each) and answered (47.9s, 18.2s, 25.5s). The fourth section hit the same `Event loop is closed` error as `basic.py` when run after another `asyncio.run()`.
+
+---
+
+### Unit tests
+
+`libs/agno/tests/unit/models/topxai/test_topxai.py`: 7 passed, without network access.
