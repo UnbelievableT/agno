@@ -272,7 +272,9 @@ async def test_custom_task_table_is_created_with_execution_fields(system):
     else:
         with db.db_engine.connect() as conn:
             columns, indexes = inspect_table(conn)
-    assert {"session_id", "job_id", "evidence", "result", "origin", "routine_id", "dedupe_key"} <= {column["name"] for column in columns}
+    assert {"session_id", "job_id", "evidence", "result", "origin", "routine_id", "dedupe_key"} <= {
+        column["name"] for column in columns
+    }
     assert {f"idx_{name}_session_id", f"idx_{name}_job_id"} <= {index["name"] for index in indexes}
 
     response = await client.post(f"/company/tasks/{value['id']}/runs")
