@@ -1,0 +1,110 @@
+"""Rehydrate code declarations by stable identity without resetting human edits."""
+
+import asyncio
+from contextlib import asynccontextmanager
+from typing import Any
+from uuid import NAMESPACE_URL, uuid5
+
+from agno.company.declarations import Product
+from agno.company.execution import _call
+from agno.company.routines import _schedule_fields
+from agno.db.utils import is_unique_violation
+from agno.scheduler import ScheduleManager
+
+
+async def arehydrate_product(db: Any, product: Product, registry: Any = None, schedule_db: Any = None):
+    """Insert declared records once, repair interrupted linking, and retain later edits."""
+    import time
+
+    product_id = product.id or str(uuid5(NAMESPACE_URL, "agno:company:product:" + product.name))
+    row = await _call(db, "get_product", product_id, include_deleted=True)
+    if row is None:
+        try:
+            row = await _call(
+                db,
+                "create_product",
+                {
+                    "id": product_id,
+                    "name": product.name,
+                    "purpose": product.purpose,
+                    "metadata": product.metadata,
+                    "user_id": product.user_id,
+                    "created_at": int(time.time()),
+                    "updated_at": None,
+                    "deleted_at": None,
+                },
+            )
+        except Exception as exc:
+            if not is_unique_violation(exc):
+                raise
+            row = await _call(db, "get_product", product_id, include_deleted=True)
+    if row is None:
+        raise RuntimeError("Product rehydration failed")
+    if row.get("deleted_at") is not None:
+        return row
+    # An existing owner remains authoritative; declarations never reassign ownership.
+    for source in product.sources:
+        source_id = source.id or str(uuid5(NAMESPACE_URL, product_id + ":" + source.type + ":" + source.reference))
+        if await _call(db, "get_source", source_id, include_deleted=True) is None:
+            try:
+                await _call(
+                    db,
+                    "create_source",
+                    {
+                        **source.model_dump(exclude={"id"}),
+                        "id": source_id,
+                        "product_id": product_id,
+                        "user_id": row["user_id"],
+                        "created_at": int(time.time()),
+                        "updated_at": None,
+                        "deleted_at": None,
+                    },
+                )
+            except Exception as exc:
+                if not is_unique_violation(exc):
+                    raise
+    schedule_db = schedule_db if schedule_db is not None else db
+    schedules = ScheduleManager(schedule_db)
+    for routine in product.routines:
+        fields = _schedule_fields(product_id, routine, registry)
+        fields["cron"] = fields.pop("cron_expr")
+        try:
+            schedule = await schedules.acreate(
+                **fields,
+                user_id=row["user_id"],
+                if_exists="skip",
+                provenance={
+                    "managed_by": "company",
+                    "target_type": routine.executor_type,
+                    "target_id": routine.executor_id,
+                },
+            )
+        except Exception as exc:
+            if not is_unique_violation(exc):
+                raise
+            existing = await _call(schedule_db, "get_schedule_by_name", fields["name"], user_id=row["user_id"])
+            if existing is None:
+                raise
+            from agno.db.schemas.scheduler import Schedule
+
+            schedule = Schedule.from_dict(existing)
+        if (
+            schedule.managed_by != "company"
+            or (schedule.payload or {}).get("metadata", {}).get("product_id") != product_id
+        ):
+            raise ValueError("Routine name is already used by another schedule")
+        row = await _call(db, "add_product_routine", product_id, schedule.id)
+    return row
+
+
+def rehydrate_product(db: Any, product: Product, registry: Any = None, schedule_db: Any = None):
+    """Synchronous startup counterpart; use arehydrate_product inside an event loop."""
+    return asyncio.run(arehydrate_product(db, product, registry, schedule_db=schedule_db))
+
+
+@asynccontextmanager
+async def _company_lifespan(app: Any, agent_os: Any):
+    for declaration in agent_os.company.products:
+        product = declaration if isinstance(declaration, Product) else Product.model_validate(declaration)
+        await arehydrate_product(agent_os._company_db, product, agent_os.registry, schedule_db=agent_os.db)
+    yield

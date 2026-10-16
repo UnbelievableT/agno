@@ -18,6 +18,7 @@ class MigrationManager:
         ("v2_5_6", packaging_version.parse("2.5.6")),
         ("v3_0_0", packaging_version.parse("3.0.0")),
         ("v3_1_4", packaging_version.parse("3.1.4")),
+        ("v3_1_5", packaging_version.parse("3.1.5")),
     ]
 
     def __init__(self, db: Union[AsyncBaseDb, BaseDb]):
@@ -60,6 +61,7 @@ class MigrationManager:
             "components": "components_table_name",
             "schedules": "schedules_table_name",
             "products": "products_table_name",
+            "sources": "sources_table_name",
             "projects": "projects_table_name",
             "tasks": "tasks_table_name",
             "schedule_runs": "schedule_runs_table_name",
@@ -174,6 +176,7 @@ class MigrationManager:
             "components": "components_table_name",
             "schedules": "schedules_table_name",
             "products": "products_table_name",
+            "sources": "sources_table_name",
             "projects": "projects_table_name",
             "tasks": "tasks_table_name",
             "schedule_runs": "schedule_runs_table_name",

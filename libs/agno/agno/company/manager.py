@@ -268,6 +268,11 @@ class CompanyManager:
         executor_id: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
         """Apply an explicit transition; the caller enforces platform authorization."""
+        from agno.company.routines import _RoutineAuthorization
+        from agno.run.authorization import current_authorization
+
+        if isinstance(current_authorization(), _RoutineAuthorization) and target in {"ready", "done"}:
+            raise PermissionError("Routines can propose work but cannot accept or complete it")
         if target == "ready":
             from agno.company.execution import _executor
 
@@ -400,6 +405,169 @@ class CompanyManager:
             query=query, agent_id=agent_id, session_id=session_id, days=days, limit=None
         )
         return entries[(page - 1) * limit : page * limit], len(entries)
+
+    def create_source(
+        self,
+        product_id: str,
+        type: str,
+        reference: str,
+        credential_ref: Optional[str] = None,
+        config: Optional[Dict[str, Any]] = None,
+        user_id: Optional[str] = None,
+        scoped_user_id: Optional[str] = None,
+        source_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Configure a reader on an owned Product; secret values are never resolved."""
+        from agno.company.playbook import _require_owner
+        from agno.db.schemas.sources import validate_source_fields
+
+        fields = dict(type=type, reference=reference, credential_ref=credential_ref, config=config)
+        validate_source_fields(fields)
+        product = self.get(product_id)
+        if product is None:
+            raise LookupError("Product not found")
+        _require_owner(product, scoped_user_id)
+        return self.db.create_source(
+            {
+                **fields,
+                "id": source_id or str(uuid4()),
+                "product_id": product_id,
+                "user_id": user_id,
+                "created_at": int(time.time()),
+                "updated_at": None,
+                "deleted_at": None,
+            }
+        )
+
+    def get_source(self, source_id: str, user_id: Optional[str] = None, include_deleted: bool = False):
+        """Read a configured Source."""
+        return self.db.get_source(source_id, user_id=user_id, include_deleted=include_deleted)
+
+    def list_sources(
+        self,
+        product_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        limit: int = 20,
+        page: int = 1,
+        include_deleted: bool = False,
+    ):
+        """List Sources using the database's paging and owner filters."""
+        return self.db.get_sources(
+            product_id=product_id, user_id=user_id, limit=limit, page=page, include_deleted=include_deleted
+        )
+
+    def delete_source(self, source_id: str, user_id: Optional[str] = None) -> bool:
+        """Soft delete a Source after checking its Product ownership."""
+        from agno.company.playbook import _require_owner
+
+        source = self.get_source(source_id)
+        if source is None:
+            return False
+        product = self.get(source["product_id"])
+        if product is None:
+            raise LookupError("Product not found")
+        _require_owner(product, user_id)
+        return self.db.delete_source(source_id)
+
+    def restore_source(self, source_id: str, user_id: Optional[str] = None):
+        """Restore a Source after checking its Product ownership."""
+        from agno.company.playbook import _require_owner
+
+        source = self.get_source(source_id, include_deleted=True)
+        if source is None:
+            return None
+        product = self.get(source["product_id"])
+        if product is None:
+            raise LookupError("Product not found")
+        _require_owner(product, user_id)
+        return self.db.restore_source(source_id)
+
+    def read_source(self, source_id: str, run_id: str):
+        """Read the configured reader and attach this run's immutable evidence."""
+        from agno.company.sources import read_source
+
+        source = self.get_source(source_id)
+        if source is None or self.get(source["product_id"]) is None:
+            raise LookupError("Source not found")
+        return read_source(source, run_id)
+
+    def intake(self, source_id: str, run_id: str, user_id: Optional[str] = None, routine_id: Optional[str] = None):
+        """Propose one Backlog task per new document; repeated evidence returns its original task."""
+        from agno.utils.string import hash_string_sha256
+
+        source = self.get_source(source_id)
+        if source is None:
+            raise LookupError("Source not found")
+        evidence = self.read_source(source_id, run_id)
+        tasks = []
+        for item in evidence:
+            key = hash_string_sha256(item["link"] + ":" + item["content_hash"])
+            tasks.append(
+                self.db.create_task(
+                    {
+                        "id": str(uuid4()),
+                        "product_id": source["product_id"],
+                        "title": "Review " + item["link"],
+                        "brief": item["content"],
+                        "status": "backlog",
+                        "origin": "routine",
+                        "routine_id": routine_id,
+                        "dedupe_key": key,
+                        "evidence": [{k: v for k, v in item.items() if k != "content"}],
+                        "session_id": str(uuid4()),
+                        "user_id": user_id,
+                        "transitions": [],
+                        "created_at": int(time.time()),
+                        "updated_at": None,
+                        "deleted_at": None,
+                    }
+                )
+            )
+        return tasks
+
+    def summarize(self, product_id: str, run_id: str, interfaces: Any, user_id: Optional[str] = None):
+        """Write the observed report to the wiki and deliver using Product configuration."""
+        from agno.company.playbook import _require_owner
+        from agno.company.summary import deliver_summary
+        from agno.utils.string import hash_string_sha256
+
+        product = self.get(product_id)
+        if product is None:
+            raise LookupError("Product not found")
+        _require_owner(product, user_id)
+        delivery = (product.get("metadata") or {}).get("summary") or {}
+        if not delivery.get("interface") or not delivery.get("destination"):
+            raise ValueError("Product summary requires an interface and destination")
+        counts = self.attention(product_id)
+        rows = []
+        page = 1
+        while True:
+            tasks, total = self.list_tasks(product_id=product_id, limit=100, page=page)
+            rows.extend(tasks)
+            if page * 100 >= total:
+                break
+            page += 1
+        content = (
+            "# " + product["name"] + " summary\n\n" + "\n".join(f"{name}: {count}" for name, count in counts.items())
+        )
+        content += "\n\n" + "\n".join(f"- {task['title']}: {task['status']}" for task in rows)
+        if not rows:
+            content += "Quiet successful check: no work requires attention."
+        path = "summary-" + hash_string_sha256(run_id) + ".md"
+        try:
+            existing = self.read_wiki(product_id, path)
+        except LookupError:
+            existing = None
+        if existing is not None and existing.content.endswith("\n\nDelivered.\n"):
+            return {"path": path, "delivered": True, "quiet": True}
+        if existing is None:
+            saved = self.write_wiki(product_id, path, content, 0, user_id=user_id)
+        else:
+            saved = existing
+            content = existing.content
+        deliver_summary(interfaces, delivery["interface"], delivery["destination"], content)
+        self.write_wiki(product_id, path, content + "\n\nDelivered.\n", saved.version, user_id=user_id)
+        return {"path": path, "delivered": True, "quiet": not rows}
 
 
 class AsyncCompanyManager:
@@ -662,6 +830,11 @@ class AsyncCompanyManager:
         executor_id: Optional[str] = None,
     ) -> Optional[Dict[str, Any]]:
         """Apply an explicit transition; the caller enforces platform authorization."""
+        from agno.company.routines import _RoutineAuthorization
+        from agno.run.authorization import current_authorization
+
+        if isinstance(current_authorization(), _RoutineAuthorization) and target in {"ready", "done"}:
+            raise PermissionError("Routines can propose work but cannot accept or complete it")
         if target == "ready":
             from agno.company.execution import _executor
 
@@ -796,3 +969,168 @@ class AsyncCompanyManager:
             query=query, agent_id=agent_id, session_id=session_id, days=days, limit=None
         )
         return entries[(page - 1) * limit : page * limit], len(entries)
+
+    async def create_source(
+        self,
+        product_id: str,
+        type: str,
+        reference: str,
+        credential_ref: Optional[str] = None,
+        config: Optional[Dict[str, Any]] = None,
+        user_id: Optional[str] = None,
+        scoped_user_id: Optional[str] = None,
+        source_id: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Configure a reader on an owned Product; secret values are never resolved."""
+        from agno.company.playbook import _require_owner
+        from agno.db.schemas.sources import validate_source_fields
+
+        fields = dict(type=type, reference=reference, credential_ref=credential_ref, config=config)
+        validate_source_fields(fields)
+        product = await self.get(product_id)
+        if product is None:
+            raise LookupError("Product not found")
+        _require_owner(product, scoped_user_id)
+        return await self.db.create_source(
+            {
+                **fields,
+                "id": source_id or str(uuid4()),
+                "product_id": product_id,
+                "user_id": user_id,
+                "created_at": int(time.time()),
+                "updated_at": None,
+                "deleted_at": None,
+            }
+        )
+
+    async def get_source(self, source_id: str, user_id: Optional[str] = None, include_deleted: bool = False):
+        """Read a configured Source."""
+        return await self.db.get_source(source_id, user_id=user_id, include_deleted=include_deleted)
+
+    async def list_sources(
+        self,
+        product_id: Optional[str] = None,
+        user_id: Optional[str] = None,
+        limit: int = 20,
+        page: int = 1,
+        include_deleted: bool = False,
+    ):
+        """List Sources using the database's paging and owner filters."""
+        return await self.db.get_sources(
+            product_id=product_id, user_id=user_id, limit=limit, page=page, include_deleted=include_deleted
+        )
+
+    async def delete_source(self, source_id: str, user_id: Optional[str] = None) -> bool:
+        """Soft delete a Source after checking its Product ownership."""
+        from agno.company.playbook import _require_owner
+
+        source = await self.get_source(source_id)
+        if source is None:
+            return False
+        product = await self.get(source["product_id"])
+        if product is None:
+            raise LookupError("Product not found")
+        _require_owner(product, user_id)
+        return await self.db.delete_source(source_id)
+
+    async def restore_source(self, source_id: str, user_id: Optional[str] = None):
+        """Restore a Source after checking its Product ownership."""
+        from agno.company.playbook import _require_owner
+
+        source = await self.get_source(source_id, include_deleted=True)
+        if source is None:
+            return None
+        product = await self.get(source["product_id"])
+        if product is None:
+            raise LookupError("Product not found")
+        _require_owner(product, user_id)
+        return await self.db.restore_source(source_id)
+
+    async def read_source(self, source_id: str, run_id: str):
+        """Read the configured reader and attach this run's immutable evidence."""
+        from agno.company.sources import aread_source
+
+        source = await self.get_source(source_id)
+        if source is None or await self.get(source["product_id"]) is None:
+            raise LookupError("Source not found")
+        return await aread_source(source, run_id)
+
+    async def intake(
+        self, source_id: str, run_id: str, user_id: Optional[str] = None, routine_id: Optional[str] = None
+    ):
+        """Propose one Backlog task per new document; repeated evidence returns its original task."""
+        from agno.utils.string import hash_string_sha256
+
+        source = await self.get_source(source_id)
+        if source is None:
+            raise LookupError("Source not found")
+        evidence = await self.read_source(source_id, run_id)
+        tasks = []
+        for item in evidence:
+            key = hash_string_sha256(item["link"] + ":" + item["content_hash"])
+            tasks.append(
+                await self.db.create_task(
+                    {
+                        "id": str(uuid4()),
+                        "product_id": source["product_id"],
+                        "title": "Review " + item["link"],
+                        "brief": item["content"],
+                        "status": "backlog",
+                        "origin": "routine",
+                        "routine_id": routine_id,
+                        "dedupe_key": key,
+                        "evidence": [{k: v for k, v in item.items() if k != "content"}],
+                        "session_id": str(uuid4()),
+                        "user_id": user_id,
+                        "transitions": [],
+                        "created_at": int(time.time()),
+                        "updated_at": None,
+                        "deleted_at": None,
+                    }
+                )
+            )
+        return tasks
+
+    async def summarize(self, product_id: str, run_id: str, interfaces: Any, user_id: Optional[str] = None):
+        """Write the observed report to the wiki and deliver using Product configuration."""
+        from agno.company.playbook import _require_owner
+        from agno.company.summary import adeliver_summary
+        from agno.utils.string import hash_string_sha256
+
+        product = await self.get(product_id)
+        if product is None:
+            raise LookupError("Product not found")
+        _require_owner(product, user_id)
+        delivery = (product.get("metadata") or {}).get("summary") or {}
+        if not delivery.get("interface") or not delivery.get("destination"):
+            raise ValueError("Product summary requires an interface and destination")
+        counts = await self.attention(product_id)
+        rows = []
+        page = 1
+        while True:
+            tasks, total = await self.list_tasks(product_id=product_id, limit=100, page=page)
+            rows.extend(tasks)
+            if page * 100 >= total:
+                break
+            page += 1
+        content = (
+            "# " + product["name"] + " summary\n\n" + "\n".join(f"{name}: {count}" for name, count in counts.items())
+        )
+        content += "\n\n" + "\n".join(f"- {task['title']}: {task['status']}" for task in rows)
+        if not rows:
+            content += "Quiet successful check: no work requires attention."
+        path = "summary-" + hash_string_sha256(run_id) + ".md"
+        try:
+            existing = await self.read_wiki(product_id, path)
+        except LookupError:
+            existing = None
+        if existing is not None and existing.content.endswith("\n\nDelivered.\n"):
+            return {"path": path, "delivered": True, "quiet": True}
+        if existing is None:
+            saved = await self.write_wiki(product_id, path, content, 0, user_id=user_id)
+        else:
+            saved = existing
+            content = existing.content
+        await adeliver_summary(interfaces, delivery["interface"], delivery["destination"], content)
+        await self.write_wiki(product_id, path, content + "\n\nDelivered.\n", saved.version, user_id=user_id)
+        return {"path": path, "delivered": True, "quiet": not rows}

@@ -55,14 +55,18 @@ class CompanyTools(Toolkit):
     model. Like HTTP, service accounts remain scoped even with isolation off.
     """
 
-    def __init__(
-        self, db: Any, *, user_isolation: bool = False, decision_tools: bool = True, agent_id: Optional[str] = None
-    ):
+    def __init__(self, db: Any, *, user_isolation: bool = False, decision_tools: bool = True,
+                 agent_id: Optional[str] = None, interfaces: Any = None):
+        self.interfaces = interfaces or []
         self.db = db
         self.user_isolation = user_isolation
         # Supplied by the learning machine, never by the model or an MCP argument.
         self._agent_id = agent_id
         names = [
+            "list_company_sources",
+            "read_company_source",
+            "intake_company_source",
+            "summarize_company_product",
             "list_company_products",
             "get_company_product",
             "list_company_projects",
@@ -451,6 +455,83 @@ class CompanyTools(Toolkit):
         await _apermission("decisions", "read", _agno_run_context)
         rows, total = await self._async().list_decisions(query, agent_id, session_id, days, limit, page)
         return _page(([asdict(row) for row in rows], total), limit, page)
+
+    def _source_context(self, source_id, run_context):
+        if run_context is None or not getattr(run_context, "run_id", None):
+            raise ValueError("Source tools require the injected run context")
+        return run_context.run_id
+
+    @requires_permission()
+    def list_company_sources(
+        self, product_id: str, limit: int = 20, page: int = 1, _agno_run_context: Optional[Any] = None
+    ) -> str:
+        """List the readers configured by humans for a Product."""
+        _permission("sources", "read", _agno_run_context)
+        return _page(self._sync().list_sources(product_id=product_id, limit=limit, page=page), limit, page)
+
+    @requires_permission()
+    def read_company_source(self, source_id: str, _agno_run_context: Optional[Any] = None) -> str:
+        """Read a configured Source with this run's content hashes and links; never credentials."""
+        _permission("sources", "read", _agno_run_context)
+        run_id = self._source_context(source_id, _agno_run_context)
+        return json.dumps(self._sync().read_source(source_id, run_id))
+
+    @requires_permission()
+    def intake_company_source(self, source_id: str, _agno_run_context: Optional[Any] = None) -> str:
+        """Read all evidence before proposing durable, deduplicated Backlog Tasks."""
+        _permission("sources", "read", _agno_run_context)
+        _permission("tasks", "write", _agno_run_context)
+        self._scoped_user(_agno_run_context)
+        run_id = self._source_context(source_id, _agno_run_context)
+        return json.dumps(self._sync().intake(source_id, run_id, user_id=_identity(_agno_run_context)))
+
+    @requires_permission()
+    def summarize_company_product(self, product_id: str, _agno_run_context: Optional[Any] = None) -> str:
+        """Deliver current work and attention counts to the configured interface and Product wiki."""
+        _permission("products", "read", _agno_run_context)
+        _permission("tasks", "read", _agno_run_context)
+        _permission("wiki", "write", _agno_run_context)
+        run_id = self._source_context(product_id, _agno_run_context)
+        return json.dumps(
+            self._sync().summarize(product_id, run_id, self.interfaces, user_id=self._scoped_user(_agno_run_context))
+        )
+
+    @requires_permission()
+    async def alist_company_sources(
+        self, product_id: str, limit: int = 20, page: int = 1, _agno_run_context: Optional[Any] = None
+    ) -> str:
+        """List the readers configured by humans for a Product."""
+        await _apermission("sources", "read", _agno_run_context)
+        return _page(await self._async().list_sources(product_id=product_id, limit=limit, page=page), limit, page)
+
+    @requires_permission()
+    async def aread_company_source(self, source_id: str, _agno_run_context: Optional[Any] = None) -> str:
+        """Read a configured Source with this run's content hashes and links; never credentials."""
+        await _apermission("sources", "read", _agno_run_context)
+        run_id = self._source_context(source_id, _agno_run_context)
+        return json.dumps(await self._async().read_source(source_id, run_id))
+
+    @requires_permission()
+    async def aintake_company_source(self, source_id: str, _agno_run_context: Optional[Any] = None) -> str:
+        """Read all evidence before proposing durable, deduplicated Backlog Tasks."""
+        await _apermission("sources", "read", _agno_run_context)
+        await _apermission("tasks", "write", _agno_run_context)
+        self._scoped_user(_agno_run_context)
+        run_id = self._source_context(source_id, _agno_run_context)
+        return json.dumps(await self._async().intake(source_id, run_id, user_id=_identity(_agno_run_context)))
+
+    @requires_permission()
+    async def asummarize_company_product(self, product_id: str, _agno_run_context: Optional[Any] = None) -> str:
+        """Deliver current work and attention counts to the configured interface and Product wiki."""
+        await _apermission("products", "read", _agno_run_context)
+        await _apermission("tasks", "read", _agno_run_context)
+        await _apermission("wiki", "write", _agno_run_context)
+        run_id = self._source_context(product_id, _agno_run_context)
+        return json.dumps(
+            await self._async().summarize(
+                product_id, run_id, self.interfaces, user_id=self._scoped_user(_agno_run_context)
+            )
+        )
 
 
 class _AsyncSyncManager:

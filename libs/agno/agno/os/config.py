@@ -632,6 +632,8 @@ class Manifest(BaseModel):
 class AgentOSConfig(BaseModel):
     """General configuration for an AgentOS instance"""
 
+    company: Optional[Dict[str, Any]] = None
+
     available_models: Optional[List[str]] = None
     chat: Optional[ChatConfig] = None
     manifest: Optional[Dict[str, Manifest]] = Field(

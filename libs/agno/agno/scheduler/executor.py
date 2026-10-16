@@ -321,6 +321,10 @@ class ScheduleExecutor:
         payload = dict(schedule.payload or {})
         has_authority = AUTHORIZATION_KEY in payload
         snapshot = payload.pop(AUTHORIZATION_KEY, None)
+        if schedule.managed_by == "company":
+            snapshot = dict(snapshot or {"context": {}, "service_account": True, "enforce_tools": True})
+            snapshot["company_routine"] = True
+            has_authority = True
         timeout_seconds = schedule.timeout_seconds or self.timeout
         url = f"{self.base_url}{endpoint}"
 

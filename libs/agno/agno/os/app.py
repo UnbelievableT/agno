@@ -460,6 +460,13 @@ class AgentOS:
         self.version = version
         self.description = description
         self.db = db
+        if company is None and self.config is not None and self.config.company is not None:
+            from agno.company.config import CompanyConfig
+            from agno.company.declarations import Product
+
+            company = CompanyConfig(
+                products=[Product.model_validate(item) for item in self.config.company.get("products", [])]
+            )
         self.company = company
         self._company_db = (company.db if company.db is not None else db) if company is not None else None
         self.checkpoint = checkpoint
@@ -931,6 +938,7 @@ class AgentOS:
             get_filesystem_router(self, settings=self.settings),
         ]
         if self.company is not None:
+            from agno.os.routers.company.heartbeat import get_heartbeat_router
             from agno.os.routers.company.playbook import get_playbook_router
             from agno.os.routers.company.products import get_products_router
             from agno.os.routers.company.projects import get_projects_router
@@ -938,6 +946,7 @@ class AgentOS:
             from agno.os.routers.company.tasks import get_tasks_router
 
             updated_routers.append(get_products_router(db=self._company_db, settings=self.settings))
+            updated_routers.append(get_heartbeat_router(self))
             updated_routers.append(get_projects_router(db=self._company_db, settings=self.settings))
             updated_routers.append(
                 get_tasks_router(db=self._company_db, settings=self.settings, registry=self.registry)
@@ -1667,6 +1676,11 @@ class AgentOS:
             # The async database lifespan
             lifespans.append(partial(db_lifespan, agent_os=self))
 
+            if self.company is not None and self.company.products:
+                from agno.company.bootstrap import _company_lifespan
+
+                lifespans.append(partial(_company_lifespan, agent_os=self))
+
             # The scheduler lifespan (after db so tables exist)
             if self._scheduler_enabled and self.db is not None:
                 lifespans.append(partial(scheduler_lifespan, agent_os=self))
@@ -1716,6 +1730,11 @@ class AgentOS:
             # Async database initialization lifespan
             lifespans.append(partial(db_lifespan, agent_os=self))  # type: ignore
 
+            if self.company is not None and self.company.products:
+                from agno.company.bootstrap import _company_lifespan
+
+                lifespans.append(partial(_company_lifespan, agent_os=self))
+
             # The scheduler lifespan (after db so tables exist)
             if self._scheduler_enabled and self.db is not None:
                 lifespans.append(partial(scheduler_lifespan, agent_os=self))
@@ -1762,6 +1781,7 @@ class AgentOS:
             get_filesystem_router(self, settings=self.settings),
         ]
         if self.company is not None:
+            from agno.os.routers.company.heartbeat import get_heartbeat_router
             from agno.os.routers.company.playbook import get_playbook_router
             from agno.os.routers.company.products import get_products_router
             from agno.os.routers.company.projects import get_projects_router
@@ -1769,6 +1789,7 @@ class AgentOS:
             from agno.os.routers.company.tasks import get_tasks_router
 
             routers.append(get_products_router(db=self._company_db, settings=self.settings))
+            routers.append(get_heartbeat_router(self))
             routers.append(get_projects_router(db=self._company_db, settings=self.settings))
             routers.append(get_tasks_router(db=self._company_db, settings=self.settings, registry=self.registry))
             routers.append(get_playbook_router(db=self._company_db, settings=self.settings))

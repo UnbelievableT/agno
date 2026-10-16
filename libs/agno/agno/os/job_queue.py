@@ -2001,7 +2001,9 @@ class QueueWorker:
                 AUTHORIZATION_KEY, {"context": {}, "service_account": True, "enforce_tools": False}
             )
             authority = restore_authorization(self.authorization_app, snapshot)
-            if payload.get("company_task_id") or (snapshot or {}).get("company_executor"):
+            if not (snapshot or {}).get("company_routine") and (
+                payload.get("company_task_id") or (snapshot or {}).get("company_executor")
+            ):
                 from agno.company.execution import _ExecutorAuthorization
 
                 authority = _ExecutorAuthorization(authority)

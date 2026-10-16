@@ -1,0 +1,44 @@
+"""Validated declarations shared by code, YAML and blank-deployment setup."""
+
+from typing import Any, Dict, List, Literal, Optional
+
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+from agno.db.schemas.sources import validate_source_fields
+
+
+class Source(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: Optional[str] = None
+    type: Literal["git", "markdown", "website"]
+    reference: str
+    credential_ref: Optional[str] = None
+    config: Dict[str, Any] = Field(default_factory=dict)
+
+    @model_validator(mode="after")
+    def validate_reader(self):
+        validate_source_fields(self.model_dump(exclude={"id"}))
+        return self
+
+
+class Routine(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    name: str = Field(min_length=1, max_length=255)
+    template: Literal["refresh", "intake", "summary"]
+    executor_type: Literal["agent", "team", "workflow"]
+    executor_id: str = Field(min_length=1)
+    cron_expr: str
+    timezone: str = "UTC"
+    instructions: Optional[str] = None
+    auto_accept: Literal[False] = False
+
+
+class Product(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    id: Optional[str] = None
+    name: str = Field(min_length=1)
+    purpose: Optional[str] = None
+    user_id: Optional[str] = None
+    metadata: Dict[str, Any] = Field(default_factory=dict)
+    sources: List[Source] = Field(default_factory=list)
+    routines: List[Routine] = Field(default_factory=list)

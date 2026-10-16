@@ -40,6 +40,7 @@ def get_schedule_router(
     include_agents: Optional[Sequence[Any]] = None,
     include_teams: Optional[Sequence[Any]] = None,
     include_workflows: Optional[Sequence[Any]] = None,
+    managed_by: Optional[str] = None,
 ) -> APIRouter:
     """Factory that creates and returns the schedule router.
 
@@ -202,6 +203,15 @@ def get_schedule_router(
             "updated_at": None,
         }
 
+        if managed_by is not None:
+            from agno.db.schemas.scheduler import RUN_ENDPOINT_RE
+
+            target = RUN_ENDPOINT_RE.fullmatch(body.endpoint)
+            if target is None:
+                raise HTTPException(status_code=422, detail="Managed routines require a run target")
+            schedule_dict.update(
+                managed_by=managed_by, target_type=target.group(1).rstrip("s"), target_id=target.group(2)
+            )
         try:
             result = await _db_call("create_schedule", schedule_dict)
         except Exception as e:
