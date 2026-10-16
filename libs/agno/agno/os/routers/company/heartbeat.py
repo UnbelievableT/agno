@@ -210,6 +210,10 @@ def get_heartbeat_router(agent_os: Any) -> APIRouter:
                 await _require_endpoint_permission(
                     request, _schedule_fields("setup", declaration, agent_os.registry)["endpoint"], "POST"
                 )
+        existing = await call(manager.get, "company-setup", include_deleted=True)
+        if existing is not None:
+            _require_write_ownership(existing, get_scoped_user_id(request))
+            return existing
         rows, _ = await call(manager.list, limit=1, include_deleted=True)
         if rows:
             await product(rows[0]["id"], request)
