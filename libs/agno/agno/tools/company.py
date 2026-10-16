@@ -180,7 +180,7 @@ class CompanyTools(Toolkit):
         executor_id: Optional[str] = None,
         _agno_run_context: Optional[Any] = None,
     ) -> str:
-        """Create Backlog work for a human to accept and choose an executor."""
+        """Create a Backlog proposal with an optional suggested executor; never accept work."""
         _permission("tasks", "write", _agno_run_context)
         self._scoped_user(_agno_run_context)
         return _public_json(
@@ -360,7 +360,7 @@ class CompanyTools(Toolkit):
         executor_id: Optional[str] = None,
         _agno_run_context: Optional[Any] = None,
     ) -> str:
-        """Create Backlog work for a human to accept and choose an executor."""
+        """Create a Backlog proposal with an optional suggested executor; never accept work."""
         await _apermission("tasks", "write", _agno_run_context)
         self._scoped_user(_agno_run_context)
         return _public_json(

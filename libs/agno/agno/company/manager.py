@@ -86,7 +86,6 @@ class CompanyManager:
         return self.db.create_project(
             {
                 **fields,
-                **_proposal_origin(),
                 "product_id": product_id,
                 "id": str(uuid4()),
                 "status": "proposed",
@@ -682,7 +681,6 @@ class AsyncCompanyManager:
         return await self.db.create_project(
             {
                 **fields,
-                **_proposal_origin(),
                 "product_id": product_id,
                 "id": str(uuid4()),
                 "status": "proposed",

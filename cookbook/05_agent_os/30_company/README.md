@@ -193,7 +193,7 @@ company:
 The executor must already be registered. Give it `CompanyTools(db)` and
 `load_routine_skills()` if it should use the bundled reader, Intake and Summary
 tools. Enable the existing AgentOS scheduler and queue to run schedules; the
-cookbook only creates and inspects them. Scheduling never grants acceptance.
+cookbook only creates and inspects them. Scheduling alone never grants acceptance.
 The OS scheduler database owns Routine definitions/history even with a separate
 Company database. `metadata.routine_ids` links them to Products.
 

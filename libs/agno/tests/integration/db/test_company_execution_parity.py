@@ -668,6 +668,9 @@ async def test_auto_accept_executor_mismatch_revocation_unknown_and_forged_evide
     with pytest.raises(ValueError, match="Unknown"):
         await executor._accept(task)
     assert (await _call(db, "get_task", task["id"]))["status"] == "backlog"
+    result = await tick(executor, db)
+    skipped = next(item for item in result["output"]["tasks"] if item["task_id"] == task["id"])
+    assert skipped["status"] == "skipped" and "Unknown" in skipped["reason"]
     assert (await client.patch(f"/company/routines/{routine['id']}", json={"auto_accept": False})).status_code == 200
     with pytest.raises(ValueError, match="no human"):
         await executor._accept(task)
@@ -808,7 +811,9 @@ async def test_attention_clears_acted_on_failures_and_preserves_results(system, 
     value = await accepted(client)
     other = await accepted(client)
     for task in (value, other):
-        reserved = await _call(db, "start_task_run", task["id"], 1, task["transitions"])
+        reserved = await _call(
+            db, "start_task_run", task["id"], 1, (await _call(db, "get_task", task["id"]))["transitions"]
+        )
         await _call(db, "complete_task_run", task["id"], reserved["job_id"], {"status": "ERROR", "content": "Failure"})
     path = f"/company/tasks/{value['id']}"
     product_filter = {"product_id": value["product_id"]}
@@ -877,3 +882,18 @@ async def test_all_framework_executor_ids_are_rejected(system, monkeypatch, kind
         assert response.status_code == 409, response.text
         assert (await client.get(path)).json()["job_id"] is None
     resolve.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_routine_can_still_propose_projects(system):
+    from agno.company.manager import AsyncCompanyManager, CompanyManager
+    from agno.company.routines import _manager_call, _RoutineAuthorization
+    from agno.run.authorization import authorization_scope
+
+    client, db, worker, os, _ = system
+    product = (await client.post("/company/products", json={"name": "Routine projects"})).json()
+    manager = AsyncCompanyManager(db, os.registry) if isinstance(db, AsyncBaseDb) else CompanyManager(db, os.registry)
+    with authorization_scope(lambda: _RoutineAuthorization(None, "routine")):
+        project = await _manager_call(manager, "create_project", product["id"], "Proposed release")
+    assert project["status"] == "proposed"
+    assert (await _manager_call(manager, "get_project", project["id"]))["product_id"] == product["id"]
