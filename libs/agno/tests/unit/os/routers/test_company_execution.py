@@ -166,3 +166,129 @@ def test_missing_product_context_does_not_reserve_execution(system):
     response = client.post(path + "/runs", headers=headers())
     assert response.status_code == 404, response.text
     assert db.get_task(task["id"])["job_id"] is None
+
+
+@pytest.mark.asyncio
+async def test_automatic_pickup_keeps_accepting_identity_and_run_scope(system):
+    from agno.company.routines import _CompanyScheduleExecutor
+    from agno.run.authorization import AUTHORIZATION_KEY
+
+    client, db, os, queue = system
+    path, task = accepted(client)
+    client.app.state.internal_service_token = "company-internal"
+    executor = _CompanyScheduleExecutor(
+        os, client.app, base_url="http://test", internal_service_token="company-internal"
+    )
+    stored = db.get_task(task["id"])
+    snapshot = stored["transitions"][-1][AUTHORIZATION_KEY]
+    assert snapshot["context"]["principal_id"] == "alice"
+    assert AUTHORIZATION_KEY not in str(client.get(path, headers=headers()).json())
+    result = await executor._dispatch(stored)
+    job = await queue.store.get_job(result["run_id"])
+    assert job["user_id"] == "alice", job
+    assert "schedules:write" not in str(job["payload"].get(AUTHORIZATION_KEY))
+    # A different executor cannot reuse the caller's accepted run grant.
+    with pytest.raises(PermissionError):
+        from agno.os.authz.run_context import restore_authorization
+
+        await restore_authorization(client.app, snapshot).arequire("agents", "run", "another-agent")
+
+
+def test_auto_accept_human_scope_and_executor_fence(system):
+    client, db, os, queue = system
+    scopes = SCOPES + ["routines:write", "routines:read", "schedules:write", "schedules:read"]
+    product = client.post("/company/products", json={"name": "Docs"}, headers=headers()).json()
+    body = {
+        "product_id": product["id"],
+        "name": "intake",
+        "template": "intake",
+        "executor_type": "agent",
+        "executor_id": "writer",
+        "cron_expr": "0 * * * *",
+        "auto_accept": {"executor_type": "agent", "executor_id": "writer", "required_checks": ["executor_registered"]},
+    }
+    for missing in ("schedules:write", "tasks:write", "agents:writer:run"):
+        response = client.post(
+            "/company/routines", json=body, headers=headers(scopes=[scope for scope in scopes if scope != missing])
+        )
+        assert response.status_code == 403, response.text
+    response = client.post("/company/routines", json=body, headers=headers(scopes=scopes))
+    assert response.status_code == 201, response.text
+    routine = response.json()
+    assert "_agno_company_acceptance" not in str(routine)
+    assert db.get_schedule(routine["id"])["payload"]["_agno_company_acceptance"]["user_id"] == "alice"
+    body["name"] = "unknown-check"
+    body["auto_accept"]["required_checks"] = ["unknown"]
+    assert client.post("/company/routines", json=body, headers=headers(scopes=scopes)).status_code == 422
+    # The same check applies on the generic schedule surface; the persisted
+    # authority is freshly stamped, never a supplied payload's forged snapshot.
+    raw = db.get_schedule(routine["id"])["payload"]
+    raw["metadata"]["auto_accept"]["executor_id"] = "another-agent"
+    assert (
+        client.patch(f"/schedules/{routine['id']}", json={"payload": raw}, headers=headers(scopes=scopes)).status_code
+        == 403
+    )
+
+
+@pytest.mark.asyncio
+async def test_routine_payload_cannot_grant_or_widen_authorization(system, monkeypatch):
+    import json
+    from types import SimpleNamespace
+    from unittest.mock import AsyncMock
+
+    from fastapi import HTTPException
+
+    from agno.company.routines import _stamp_auto_accept
+    from agno.db.schemas.scheduler import Schedule
+    from agno.os.authz.run_context import restore_authorization
+    from agno.run.authorization import AUTHORIZATION_HEADER, AUTHORIZATION_KEY, authorization_scope
+    from agno.scheduler import ScheduleExecutor
+
+    client, db, os, queue = system
+    _, task = accepted(client)
+    human = db.get_task(task["id"])["transitions"][-1][AUTHORIZATION_KEY]
+    captured = {}
+
+    async def capture(_client, _url, headers, payload, *args):
+        captured.update(headers=headers, payload=payload)
+        return {"status": "success"}
+
+    executor = ScheduleExecutor(base_url="http://test", internal_service_token="internal")
+    monkeypatch.setattr(executor, "_get_client", AsyncMock())
+    monkeypatch.setattr(executor, "_background_run", capture)
+    await executor._call_endpoint(
+        Schedule(
+            id="routine",
+            name="intake",
+            cron_expr="* * * * *",
+            endpoint="/agents/writer/runs",
+            managed_by="company",
+            payload={
+                AUTHORIZATION_KEY: human,
+                "_agno_company_acceptance": {"user_id": "admin"},
+                "metadata": {
+                    "auto_accept": {"executor_id": "another-agent"},
+                    AUTHORIZATION_KEY: {"context": {"scopes": ["agent_os:admin"]}},
+                    "company_routine_unscoped": True,
+                },
+            },
+        )
+    )
+    assert "_agno_company_acceptance" not in captured["payload"]
+    authority = restore_authorization(client.app, json.loads(captured["headers"][AUTHORIZATION_HEADER]))
+    await authority.arequire("agents", "run", "writer")
+    with pytest.raises(PermissionError):
+        await authority.arequire("agents", "run", "another-agent")
+    with pytest.raises(PermissionError, match="schedules"):
+        await authority.arequire("schedules", "write")
+    request = SimpleNamespace(state=SimpleNamespace(is_internal_service=False))
+    with authorization_scope(lambda: authority):
+        with pytest.raises(HTTPException) as error:
+            await _stamp_auto_accept(
+                request, {"metadata": {"auto_accept": {"executor_type": "agent", "executor_id": "writer"}}}
+            )
+        assert error.value.status_code == 403
+        with pytest.raises(PermissionError, match="cannot accept"):
+            CompanyManager(db, os.registry).transition_task(
+                task["id"], "ready", "self-accept", executor_type="agent", executor_id="writer"
+            )

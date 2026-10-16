@@ -2,15 +2,18 @@
 
 Prerequisites: Install agno, sqlalchemy, psycopg, fastapi and httpx; start PostgreSQL.
 Run: .venv/bin/python cookbook/05_agent_os/30_company/06_execute_tasks.py
-Try: Set COMPANY_DB=postgres to store Company records and runs in PostgreSQL too.
+Try: Set COMPANY_DB=postgres for PostgreSQL records and runs. Set
+COMPANY_AUTOMATION=1 for scheduler pickup and bounded Routine acceptance.
 """
 
 import json
 import os
 import time
+from pathlib import Path
 from tempfile import TemporaryDirectory
 from uuid import uuid4
 
+from agno.company import CompanyManager
 from agno.db.postgres import PostgresDb
 from agno.db.sqlite import SqliteDb
 from agno.job_queue import QueueConfig
@@ -47,12 +50,15 @@ if __name__ == "__main__":
             steps=[Step(name="Draft", executor=draft)],
             telemetry=False,
         )
+        automatic = os.getenv("COMPANY_AUTOMATION") == "1"
         agent_os = AgentOS(
             db=db,
             registry=Registry(workflows=[workflow]),
             company=CompanyConfig(),
             queue=QueueConfig(durable=True, db=queue_db, poll_interval=0.1),
             telemetry=False,
+            scheduler=automatic,
+            scheduler_poll_interval=0.1,
         )
         try:
             with TestClient(agent_os.get_app()) as client:
@@ -77,10 +83,16 @@ if __name__ == "__main__":
                     },
                 )
                 assert accepted.status_code == 200, accepted.text
-                started = client.post(path + "/runs", json={"attempt": 1})
-                assert started.status_code == 202, started.text
-                duplicate = client.post(path + "/runs", json={"attempt": 1})
-                assert duplicate.json()["run_id"] == started.json()["run_id"]
+                if automatic:
+                    # Advance the existing schedule for a fast demonstration;
+                    # normal deployments leave its one-minute cron untouched.
+                    schedule = db.get_schedule_by_name("Company automation")
+                    db.update_schedule(schedule["id"], next_run_at=0)
+                else:
+                    started = client.post(path + "/runs", json={"attempt": 1})
+                    assert started.status_code == 202, started.text
+                    duplicate = client.post(path + "/runs", json={"attempt": 1})
+                    assert duplicate.json()["run_id"] == started.json()["run_id"]
                 deadline = time.monotonic() + 30
                 while time.monotonic() < deadline:
                     task = client.get(path).json()
@@ -98,7 +110,68 @@ if __name__ == "__main__":
                 ).json()
                 print("Task completed and awaits review")
                 print(json.dumps(attention, indent=2))
-                print("Duplicate start returned the first run; no model call was made")
+                if automatic:
+                    release = Path(directory) / "release.md"
+                    release.write_text("# Release\nDocument the reviewed API.\n")
+                    source = client.post(
+                        "/company/sources",
+                        json={
+                            "product_id": product["id"],
+                            "type": "markdown",
+                            "reference": str(release),
+                        },
+                    ).json()
+                    routine = client.post(
+                        "/company/routines",
+                        json={
+                            "product_id": product["id"],
+                            "name": "intake",
+                            "template": "intake",
+                            "executor_type": "workflow",
+                            "executor_id": "draft",
+                            "cron_expr": "0 0 1 1 *",
+                            "auto_accept": {
+                                "executor_type": "workflow",
+                                "executor_id": "draft",
+                                "source_ids": [source["id"]],
+                                "required_checks": [
+                                    "has_source_evidence",
+                                    "executor_registered",
+                                ],
+                                "limits": {"max_acceptances": 1},
+                            },
+                        },
+                    )
+                    routine.raise_for_status()
+                    manager = CompanyManager(db, agent_os.registry)
+                    proposal = manager.intake(
+                        source["id"],
+                        "cookbook-source-scan",
+                        routine_id=routine.json()["id"],
+                        executor_type="workflow",
+                        executor_id="draft",
+                    )[0]
+                    assert proposal["status"] == "backlog"
+                    db.update_schedule(schedule["id"], next_run_at=0)
+                    deadline = time.monotonic() + 30
+                    while time.monotonic() < deadline:
+                        proposal = manager.get_task(proposal["id"])
+                        if proposal["status"] == "in_review":
+                            break
+                        time.sleep(0.1)
+                    assert proposal["status"] == "in_review", proposal
+                    client.patch(
+                        "/company/routines/" + routine.json()["id"],
+                        json={"auto_accept": False},
+                    ).raise_for_status()
+                    print(
+                        "Scheduler picked up Ready work and accepted one verified Routine proposal."
+                    )
+                    print("Authorization was revoked; no model call was made.")
+                else:
+                    print(
+                        "Duplicate start returned the first run; no model call was made"
+                    )
         finally:
             if db is not queue_db:
                 db.close()

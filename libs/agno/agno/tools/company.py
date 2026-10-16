@@ -508,7 +508,14 @@ class CompanyTools(Toolkit):
         return _public_json(self._sync().read_source(source_id, run_id))
 
     @requires_permission()
-    def intake_company_source(self, source_id: str, _agno_run_context: Optional[Any] = None) -> str:
+    def intake_company_source(
+        self,
+        source_id: str,
+        _agno_run_context: Optional[Any] = None,
+        executor_type: Optional[str] = None,
+        executor_id: Optional[str] = None,
+        project_id: Optional[str] = None,
+    ) -> str:
         """Read all evidence before proposing durable, deduplicated Backlog Tasks."""
         _permission("sources", "read", _agno_run_context)
         _permission("tasks", "write", _agno_run_context)
@@ -520,6 +527,9 @@ class CompanyTools(Toolkit):
                 run_id,
                 user_id=_identity(_agno_run_context),
                 routine_id=getattr(_authority(_agno_run_context), "routine_id", None),
+                executor_type=executor_type,
+                executor_id=executor_id,
+                project_id=project_id,
             )
         )
 
@@ -555,7 +565,14 @@ class CompanyTools(Toolkit):
         return _public_json(await self._async().read_source(source_id, run_id))
 
     @requires_permission()
-    async def aintake_company_source(self, source_id: str, _agno_run_context: Optional[Any] = None) -> str:
+    async def aintake_company_source(
+        self,
+        source_id: str,
+        _agno_run_context: Optional[Any] = None,
+        executor_type: Optional[str] = None,
+        executor_id: Optional[str] = None,
+        project_id: Optional[str] = None,
+    ) -> str:
         """Read all evidence before proposing durable, deduplicated Backlog Tasks."""
         await _apermission("sources", "read", _agno_run_context)
         await _apermission("tasks", "write", _agno_run_context)
@@ -567,6 +584,9 @@ class CompanyTools(Toolkit):
                 run_id,
                 user_id=_identity(_agno_run_context),
                 routine_id=getattr(_authority(_agno_run_context), "routine_id", None),
+                executor_type=executor_type,
+                executor_id=executor_id,
+                project_id=project_id,
             )
         )
 

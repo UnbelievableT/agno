@@ -162,6 +162,8 @@ def get_company_runs_router(os: Any) -> APIRouter:
         if value.get("job_id") and run_database(value) is not run_db:
             raise HTTPException(409, "A Task session must stay in its original executor database")
         caller = get_scoped_user_id(request) or getattr(request.state, "user_id", None)
+        if observed is not None:
+            caller = value.get("accepted_by")
         # The ordinary run route owns session permissions, including on revisions.
         from agno.db.base import SessionType
         from agno.os.middleware.user_scope import assert_session_writable, caller_is_admin
@@ -227,7 +229,13 @@ def get_company_runs_router(os: Any) -> APIRouter:
                 request,
                 path,
                 "POST",
-                {"message": message, "stream": "false", "background": "true", "session_id": value["session_id"]},
+                {
+                    "message": message,
+                    "stream": "false",
+                    "background": "true",
+                    "session_id": value["session_id"],
+                    **({"user_id": caller} if caller is not None else {}),
+                },
                 key=f"company:{task_id}:{body.attempt}",
             )
         finally:

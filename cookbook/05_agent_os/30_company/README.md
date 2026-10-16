@@ -107,7 +107,7 @@ machine. It has no acceptance, completion, owner, Sources or scheduler tools.
 CompanyTools can be published explicitly with `MCPConfig(tools=[...])`, following
 the existing MCP toolkit convention. Direct MCP calls have the same write fence.
 The examples make no provider calls; they do not demonstrate live model quality.
-Routines and Sources are outside this delivery.
+Routines and Sources are described below.
 
 
 ## Execution and attention
@@ -219,5 +219,99 @@ success. No live messages are sent by this cookbook.
 
 Existing Task tables need the shared migration:
 `await MigrationManager(db).up(table_type="tasks")`. No Company-private storage
-or migration machinery is used. Automatic acceptance and automatic Task pickup
-are not enabled by this change.
+or migration machinery is used. Automatic acceptance is opt-in as described below.
+
+
+## Automation
+
+With Company, `scheduler=True`, and the durable queue configured, the scheduler
+creates one managed `Company automation` schedule. Each minute it checks Ready
+Tasks and authorized Routine proposals. It uses the scheduler's ordinary claims,
+release, and run history. No extra loop, table, or route is installed. Skipped
+Tasks and proposals have their reasons in this schedule's run output, readable
+through `/schedules/{id}/runs`.
+
+Run both behaviors without a model call:
+
+```bash
+COMPANY_AUTOMATION=1 .venv/bin/python cookbook/05_agent_os/30_company/06_execute_tasks.py
+COMPANY_AUTOMATION=1 COMPANY_DB=postgres .venv/bin/python cookbook/05_agent_os/30_company/06_execute_tasks.py
+```
+
+The example advances the existing schedule's due time to avoid a one-minute
+wait. The poller still claims the schedule, and Tasks still enter the ordinary
+executor run route and durable queue. A pending submission retains its original
+attempt on restart. The queue owns execution retry limits; new ticks do not
+start additional attempts for running or failed Tasks. A human can request a
+retry using the existing run route. Returning queued work to Backlog prevents
+its executor from starting. Successful work remains In review.
+
+An authenticated human needs `routines:write`, `schedules:write`, `tasks:write`,
+and run permission for both the Routine target and the proposed Task executor.
+POST `/company/routines` accepts `auto_accept` at creation; PATCH
+`/company/routines/{id}` can authorize, edit, or revoke it. For example, replace
+the IDs below with real records and PATCH this body:
+
+```json
+{
+  "auto_accept": {
+    "executor_type": "agent",
+    "executor_id": "writer",
+    "source_ids": ["release-notes"],
+    "work_scope": {
+      "product_ids": ["documentation"],
+      "project_ids": ["release-documentation"]
+    },
+    "required_checks": ["project_active", "has_source_evidence", "executor_registered"],
+    "limits": {"max_acceptances": 5, "expires_at": 1798761600}
+  }
+}
+```
+
+Every authorization names an exact executor type and ID. A proposal must name
+that same executor, belong to the Routine's Product, and carry the framework's
+Routine origin. `propose_company_task` and `intake_company_source` can name a
+proposed executor and Project; neither can accept work. Source IDs, work scope,
+and required checks are optional bounds. Omitted Source/scope bounds impose no
+additional restriction; an empty allowed-ID list permits no matching work.
+`project_ids` can include `null` to allow independent Tasks. Unknown fields and
+check names fail closed. A Source bound requires verified reader evidence.
+
+| Built-in required check | Server-side fact checked |
+| --- | --- |
+| `project_active` | The proposal's Project exists, belongs to the same Product, and is active. Independent Tasks fail this check. |
+| `has_source_evidence` | Evidence names an existing Source in this Product; a fresh read through its configured reader matches each content hash and link. An asserted hash or `passed` field is insufficient. |
+| `executor_registered` | The proposed executor exists in the current registry and passes the ordinary Company executor checks. Registry validation is also mandatory for every acceptance and dispatch. |
+
+`limits.max_acceptances` defaults to **1** and counts successful automatic
+acceptances over the Routine's lifetime, including archived Tasks and repeat
+acceptances of the same Task. Editing the policy or restarting does not reset
+that count. Raising the limit requires a new human authorization.
+`limits.expires_at` is an optional UTC epoch-second expiry. The existing Product
+row serializes acceptance accounting on SQLite and PostgreSQL; concurrent ticks
+cannot exceed the limit.
+
+Applications can add checks with
+`CompanyConfig(acceptance_checks={"custom_check": callable})`. Every built-in
+and custom callable has the same `(task, manager)` signature: a copy of the
+proposal and the sync or async Company manager for the configured database.
+A callable may be sync or async and must return exactly `True` to pass. Errors,
+false results, and missing names keep the proposal in Backlog. Built-in names
+cannot be overridden. Registration is application code, never a Routine payload
+or agent tool operation.
+
+PATCH `{"auto_accept": false}` to revoke. Every tick reloads the schedule,
+checks the saved human's current authority using the scheduler's authorization
+conventions, and repeats the checks before acceptance. Changed or revoked
+policies also block already accepted automatic work at dispatch and in the
+queue. Human acceptance snapshots use the same scheduler convention: stored-role
+changes are re-evaluated; token-scope grants retain their saved scopes. Tasks
+accepted before snapshots were introduced need fresh acceptance before pickup.
+A disabled human cannot authorize automatic work through the user directory.
+
+In a local deployment with authentication disabled, API callers are trusted
+operators, as for the existing scheduler. Code/YAML declarations remain
+proposal-only: write an automatic authorization through the human API.
+Executors and Product Manager retain no `schedules:write` or SchedulerTools.
+Private authorization is removed from public payloads and executor input;
+Routine metadata is data, never a source of broader executor authority.

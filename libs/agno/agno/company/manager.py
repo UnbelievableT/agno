@@ -506,13 +506,29 @@ class CompanyManager:
             raise LookupError("Source not found")
         return read_source(source, run_id)
 
-    def intake(self, source_id: str, run_id: str, user_id: Optional[str] = None, routine_id: Optional[str] = None):
+    def intake(
+        self,
+        source_id: str,
+        run_id: str,
+        user_id: Optional[str] = None,
+        routine_id: Optional[str] = None,
+        executor_type: Optional[str] = None,
+        executor_id: Optional[str] = None,
+        project_id: Optional[str] = None,
+    ):
         """Propose one Backlog task per new document; repeated evidence returns its original task."""
+        from agno.db.schemas.tasks import validate_task_fields
         from agno.utils.string import hash_string_sha256
+
+        validate_task_fields({"executor_type": executor_type, "executor_id": executor_id, "project_id": project_id})
 
         source = self.get_source(source_id)
         if source is None:
             raise LookupError("Source not found")
+        if project_id is not None:
+            project = self.get_project(project_id)
+            if project is None or project["product_id"] != source["product_id"]:
+                raise ValueError("Task and Project must belong to the same Product")
         evidence = self.read_source(source_id, run_id)
         tasks = []
         for item in evidence:
@@ -525,6 +541,9 @@ class CompanyManager:
                         "title": "Review " + item["link"],
                         "brief": item["content"],
                         "status": "backlog",
+                        "executor_type": executor_type,
+                        "executor_id": executor_id,
+                        "project_id": project_id,
                         "origin": "routine",
                         "routine_id": _proposal_origin().get("routine_id", routine_id),
                         "dedupe_key": key,
@@ -1086,14 +1105,28 @@ class AsyncCompanyManager:
         return await aread_source(source, run_id)
 
     async def intake(
-        self, source_id: str, run_id: str, user_id: Optional[str] = None, routine_id: Optional[str] = None
+        self,
+        source_id: str,
+        run_id: str,
+        user_id: Optional[str] = None,
+        routine_id: Optional[str] = None,
+        executor_type: Optional[str] = None,
+        executor_id: Optional[str] = None,
+        project_id: Optional[str] = None,
     ):
         """Propose one Backlog task per new document; repeated evidence returns its original task."""
+        from agno.db.schemas.tasks import validate_task_fields
         from agno.utils.string import hash_string_sha256
+
+        validate_task_fields({"executor_type": executor_type, "executor_id": executor_id, "project_id": project_id})
 
         source = await self.get_source(source_id)
         if source is None:
             raise LookupError("Source not found")
+        if project_id is not None:
+            project = await self.get_project(project_id)
+            if project is None or project["product_id"] != source["product_id"]:
+                raise ValueError("Task and Project must belong to the same Product")
         evidence = await self.read_source(source_id, run_id)
         tasks = []
         for item in evidence:
@@ -1106,6 +1139,9 @@ class AsyncCompanyManager:
                         "title": "Review " + item["link"],
                         "brief": item["content"],
                         "status": "backlog",
+                        "executor_type": executor_type,
+                        "executor_id": executor_id,
+                        "project_id": project_id,
                         "origin": "routine",
                         "routine_id": _proposal_origin().get("routine_id", routine_id),
                         "dedupe_key": key,

@@ -339,6 +339,16 @@ class _CompanyScheduleExecutor(ScheduleExecutor):
             raise ValueError("Automatic acceptance requires human authority")
         if authority is None and os.authorization:
             raise ValueError("Automatic acceptance has no saved human authority")
+        user_store = getattr(self.app.state, "user_store", None)
+        if user_store is not None and grant.get("user_id") is not None:
+            try:
+                disabled = await user_store.ais_disabled(grant["user_id"])
+            except Exception:
+                if getattr(self.app.state, "user_directory_fail_closed", False):
+                    raise ValueError("Automatic acceptance user directory is unavailable")
+                disabled = False
+            if disabled:
+                raise ValueError("Automatic acceptance author is disabled")
         if authority is not None:
             for resource, action, resource_id in (
                 ("schedules", "write", None),
@@ -353,6 +363,8 @@ class _CompanyScheduleExecutor(ScheduleExecutor):
         )
         checks = _acceptance_checks(os)
         with authorization_scope(lambda: authority):
+            if policy.source_ids is not None and not await _has_source_evidence(task, manager):
+                raise ValueError("Required automatic acceptance check failed: has_source_evidence")
             for name in policy.required_checks:
                 check = checks.get(name)
                 if check is None:
@@ -370,6 +382,12 @@ class _CompanyScheduleExecutor(ScheduleExecutor):
             current = await _call(os.db, "get_schedule", schedule["id"])
             if not current or not current["enabled"] or _policy_fingerprint(current) != _policy_fingerprint(schedule):
                 raise ValueError("Routine automatic acceptance changed during checks")
+            if policy.limits.expires_at is not None and int(time.time()) >= policy.limits.expires_at:
+                raise ValueError("Routine automatic acceptance expired during checks")
+            if authority is not None:
+                await authority.arequire("schedules", "write")
+                await authority.arequire("tasks", "write")
+                await authority.arequire(policy.executor_type + "s", "run", policy.executor_id)
             accepted = await _manager_call(
                 manager,
                 "transition_task",

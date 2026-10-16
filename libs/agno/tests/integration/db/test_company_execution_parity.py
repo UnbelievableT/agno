@@ -680,3 +680,56 @@ async def test_auto_accept_revocation_after_queue_and_scope_changes_during_check
         await executor._dispatch(ready)
     assert (await execute(worker))["status"] == "failed"
     assert (await _call(db, "get_task", task["id"]))["status"] != "in_review"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("change", ["proposal", "authorization", "expiry", "scope", "sources"])
+async def test_auto_accept_rechecks_every_bound_and_check_races(system, tmp_path, change):
+    from agno.company.execution import _call
+
+    client, db, worker, os, _ = system
+    task, routine, manager = await routine_proposal(system, tmp_path)
+    executor, _ = await automation(system)
+    schedule = await _call(db, "get_schedule", routine["id"])
+    policy = schedule["payload"]["metadata"]["auto_accept"]
+    if change in {"proposal", "authorization"}:
+
+        async def check(observed, manager):
+            if change == "proposal":
+                await _call(db, "update_task", observed["id"], brief="Changed during check")
+            else:
+                await _call(db, "update_schedule", routine["id"], enabled=False)
+            return True
+
+        os.company.acceptance_checks["race"] = check
+        policy["required_checks"] = ["race"]
+    elif change == "expiry":
+        policy["limits"]["expires_at"] = 1
+    elif change == "scope":
+        policy["work_scope"]["project_ids"] = []
+    else:
+        policy["source_ids"] = []
+    await _call(db, "update_schedule", routine["id"], payload=schedule["payload"])
+    with pytest.raises(ValueError):
+        await executor._accept(task)
+    assert (await _call(db, "get_task", task["id"]))["status"] == "backlog"
+
+
+@pytest.mark.asyncio
+async def test_automation_records_revocation_before_dispatch(system, monkeypatch):
+    from agno.company.execution import _call
+
+    client, db, worker, os, _ = system
+    value = await accepted(client)
+    executor, schedule = await automation(system)
+    original = executor._dispatch
+
+    async def revoke(task):
+        await _call(db, "transition_task", task["id"], "backlog", "Withdraw before dispatch")
+        return await original(task)
+
+    monkeypatch.setattr(executor, "_dispatch", revoke)
+    result = await tick(executor, db)
+    assert result["output"]["tasks"][0]["status"] == "skipped"
+    assert "changed" in result["output"]["tasks"][0]["reason"]
+    assert (await _call(db, "get_task", value["id"]))["job_id"] is None
