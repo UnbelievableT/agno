@@ -554,3 +554,25 @@ files and 21 CLI files), and all output was read. No provider calls were made.
 Earlier migration test entries describe the implementation before this simplification.
 
 ---
+
+### Automation after final Heartbeat integration — October 16, 2026
+
+**Status:** PASS
+
+**Description:** Incorporated the final Heartbeat head
+`7404f7f9c0b8deb89b1ff35d47aca4886163574c`, including main's filesystem
+transaction fixes and the initial Task schema without unreleased migrations.
+The final parent update changed only this log and already-applied formatting.
+
+**Result:** Reran the full DB/OS/scheduler unit suites: **6,320 passed,
+7 conditional skips** for optional backend test dependencies, root-only and
+live-provider tests. Redis fencing tests ran and passed in this rerun. The
+combined integration run passed **398 tests**: 359 Company/scheduler database
+cases, six scheduler owner checks and 33 inherited filesystem transaction
+regressions. Four optional MongoDB cases were skipped; all SQLite/PostgreSQL
+cases ran. All ten cookbook executions passed again. Full format and validation
+passed, including mypy on 1,153 core and 21 CLI files; output was read.
+Unrelated formatter-only edits were excluded and exact-tree validation passed.
+No live provider calls or outbound messages were made.
+
+---
