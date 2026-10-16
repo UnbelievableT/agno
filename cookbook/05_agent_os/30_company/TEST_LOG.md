@@ -426,3 +426,36 @@ validation passed, including both mypy checks, and their output was read. No
 provider calls were made. The earlier full unit-suite result remains the baseline.
 
 ---
+
+### Automation final validation — October 16, 2026
+
+**Status:** PASS
+
+**Description:** Validated Automation with Heartbeat head
+`c1f7f0b1909c9660e755b26e298650b99ee480b7` incorporated. The full
+`libs/agno/tests/unit/db`, `libs/agno/tests/unit/os`, and
+`libs/agno/tests/unit/scheduler` suites passed **6,312 tests**. Fifteen
+conditional skips cover optional Firestore/Mongo/MySQL test dependencies, a
+root-only test, live OpenAI tests, and Redis-only stream-fencing tests.
+
+**Result:** All Company and scheduler database integration files passed
+**359 tests** on sync/async SQLite and PostgreSQL. Four optional MongoDB
+scheduler cases were skipped; no requested SQLite/PostgreSQL cases were skipped.
+The scheduler HTTP owner-recheck integration file passed **6 tests**. The ten
+cookbook executions listed above were rerun successfully on the merged code.
+Compilation, the full format script, and validation passed; both mypy summaries
+(1,155 Agno files, 21 agnoctl files) and the full validation output were read.
+Unrelated formatter changes were excluded and validation passed again on the
+exact feature tree. Tests/cookbooks used Python 3.12 and validation used the
+clean Python 3.10 development environment.
+
+Regressions cover two concurrent claims, interrupted dispatch before and after
+queue submission, queued withdrawal, executor mismatch, revoked authorization,
+built-in checks without application registration, unknown checks with recorded
+reasons, forged Source evidence, scope/check races, and lifetime limits.
+Payload authority injection and internal-token-only Task submission are denied.
+Self-review reproduced a Routine Project proposal regression on all four
+adapters; its fix and the complete integration rerun passed. No live provider
+calls or outbound messages were made.
+
+---
