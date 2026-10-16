@@ -2,7 +2,7 @@
 
 ## Heartbeat review fixes — October 16, 2026
 
-**Status:** PASS (focused checks, integration suites, scripts and cookbooks); full unit rerun in progress.
+**Status:** PASS
 
 **Description:** Added regressions for Product identity in actual scheduler/queue model messages,
 Source-only read authorization, binary/oversized repository files, explicit-file failures,
@@ -10,11 +10,17 @@ interrupted setup creation/linking, preserved edits and tombstones, selective pr
 unchanged issue identity across evidence edits, summary retries and one versioned page,
 bounded Product Manager tools, and strict YAML declarations.
 
-**Result:** 53 focused Company tests and 350 Company/scheduler/filesystem integrations passed,
+**Result:** Full database/OS/scheduler unit suites: **6,287 passed, 39 conditional skips**.
+After the final missing-Source guard, reran **53 focused Company tests**, all **350
+Company/scheduler/filesystem integrations**, and all eight cookbook executions successfully,
 with all four SQLite/PostgreSQL Company adapters exercised. Compilation, format and validation
 passed; complete output read, including mypy on 1,153 framework and 21 CLI files.
 Existing local PostgreSQL, MongoDB and Redis services were reused without altering them.
-No live model or outbound messages were used.
+No live model or outbound messages were used. A real cookbook repository Source scan
+read 3,268 documents and recorded 21 skipped binary/oversized paths, including PNGs.
+The final guard also proves a disappeared configured file cannot become a parent-directory scan.
+Skips were optional Firestore/Mongo/MySQL/asyncpg dependencies, root-only behavior,
+or live OpenAI credentials.
 
 ### 01_manage_products.py
 
