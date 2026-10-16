@@ -467,11 +467,8 @@ class AgentOS:
         self.db = db
         if company is None and self.config is not None and self.config.company is not None:
             from agno.company.config import CompanyConfig
-            from agno.company.declarations import Product
 
-            company = CompanyConfig(
-                products=[Product.model_validate(item) for item in self.config.company.get("products", [])]
-            )
+            company = CompanyConfig(products=self.config.company.products)
         self.company = company
         self._company_db = (company.db if company.db is not None else db) if company is not None else None
         self.checkpoint = checkpoint

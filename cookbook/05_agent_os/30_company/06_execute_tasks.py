@@ -147,10 +147,16 @@ if __name__ == "__main__":
                     proposal = manager.intake(
                         source["id"],
                         "cookbook-source-scan",
+                        {
+                            "title": "Document the reviewed API",
+                            "brief": "Explain the released API in the guide",
+                            "proposal_key": "reviewed-api-guide",
+                            "evidence_links": [release.as_uri()],
+                        },
                         routine_id=routine.json()["id"],
                         executor_type="workflow",
                         executor_id="draft",
-                    )[0]
+                    )
                     assert proposal["status"] == "backlog"
                     db.update_schedule(schedule["id"], next_run_at=0)
                     deadline = time.monotonic() + 30

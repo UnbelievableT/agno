@@ -45,13 +45,14 @@ def test_routine_scheduler_wrappers(system):
     assert row["managed_by"] == "company"
     assert row["target_id"] == "reader"
     assert row["payload"]["metadata"] == {"product_id": product["id"], "template": "intake", "auto_accept": False}
-    assert row["payload"]["message"] == load_routine_skills().get_skill("intake").instructions
+    assert row["payload"]["message"].endswith(load_routine_skills().get_skill("intake").instructions)
     assert db.get_product(product["id"])["metadata"]["routine_ids"] == [row["id"]]
     path = "/company/routines/" + row["id"]
     assert client.post(path + "/pause").json()["enabled"] is False
     assert client.post(path + "/resume").json()["enabled"] is True
     assert client.patch(path, json={"instructions": "Check quietly"}).status_code == 200
-    assert db.get_schedule(row["id"])["payload"]["message"] == "Check quietly"
+    message = db.get_schedule(row["id"])["payload"]["message"]
+    assert product["id"] in message and message.endswith("Check quietly")
     assert client.patch(path, json={"auto_accept": True}).status_code == 422
     assert client.get(path + "/runs").json()["meta"]["total_count"] == 0
     assert len(client.get("/company/routines").json()["data"]) == 1
@@ -259,3 +260,101 @@ def test_sources_and_routines_scopes_and_ownership(tmp_path, isolation):
         )
         assert client.post("/company/routines", headers=headers("alice"), json=routine).status_code == 201
     db.close()
+
+
+@pytest.mark.parametrize("failure", ["create_schedule", "add_product_routine"])
+def test_setup_retry_repairs_partial_records_and_retains_edits(system, tmp_path, monkeypatch, failure):
+    client, os, db = system
+    body = dict(
+        name="Setup",
+        sources=[dict(type="markdown", reference=str(tmp_path / "readme.md"))],
+        routines=[
+            dict(name="refresh", template="refresh", executor_type="agent", executor_id="reader", cron_expr="0 * * * *")
+        ],
+    )
+    original = getattr(db, failure)
+
+    def unavailable(*args, **kwargs):
+        raise RuntimeError("Injected storage failure")
+
+    monkeypatch.setattr(db, failure, unavailable)
+    with pytest.raises(RuntimeError, match="Injected storage failure"):
+        client.post("/company/setup", json=body)
+    monkeypatch.setattr(db, failure, original)
+    manager = CompanyManager(db)
+    manager.update("company-setup", name="Human edit")
+    source = manager.list_sources()[0][0]
+    manager.delete_source(source["id"])
+    schedules = db.get_schedules()[0]
+    if schedules:
+        db.update_schedule(
+            schedules[0]["id"], enabled=False, payload={**schedules[0]["payload"], "message": "Human instructions"}
+        )
+    retry = client.post("/company/setup", json=body)
+    assert retry.status_code == 200, retry.text
+    assert retry.json()["name"] == "Human edit"
+    schedules = db.get_schedules()[0]
+    assert len(schedules) == 1
+    assert retry.json()["metadata"]["routine_ids"] == [schedules[0]["id"]]
+    assert manager.list_sources()[1] == 0
+    if failure == "add_product_routine":
+        assert schedules[0]["enabled"] is False
+        assert schedules[0]["payload"]["message"] == "Human instructions"
+    client.post("/company/setup", json=body).raise_for_status()
+    assert len(db.get_schedules()[0]) == 1
+    manager.delete("company-setup")
+    assert client.post("/company/setup", json=body).json()["deleted_at"] is not None
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("async_tools", [False, True])
+async def test_source_tools_only_require_source_and_proposal_scopes(tmp_path, async_tools):
+    from agno.os.auth import _default_authorization_provider
+    from agno.os.authz.provider import AuthorizationContext
+    from agno.run import RunContext
+    from agno.run.authorization import RunAuthorization
+    from agno.tools.company import CompanyTools
+
+    db = SqliteDb(db_file=str(tmp_path / "permissions.db"))
+    manager = CompanyManager(db)
+    product = manager.create("Docs")
+    path = tmp_path / "page.md"
+    path.write_text("Document the released API")
+    source = manager.create_source(product["id"], "markdown", str(path))
+    tools = CompanyTools(db)
+    authority = RunAuthorization(
+        _default_authorization_provider(),
+        AuthorizationContext(principal_id="reader", scopes=["sources:read", "tasks:write"]),
+    )
+    context = RunContext(run_id="source-run", session_id="session", user_id="reader")
+    args = dict(
+        source_id=source["id"],
+        title="Document API",
+        brief="Write API guide",
+        proposal_key="api-guide",
+        evidence_links=[path.as_uri()],
+        _agno_run_context=context,
+    )
+    with authorization_scope(lambda: authority):
+        if async_tools:
+            evidence = json.loads(await tools.aread_company_source(source["id"], _agno_run_context=context))
+            task = json.loads(await tools.aintake_company_source(**args))
+        else:
+            evidence = json.loads(tools.read_company_source(source["id"], _agno_run_context=context))
+            task = json.loads(tools.intake_company_source(**args))
+    assert evidence[0]["content_hash"] == task["evidence"][0]["content_hash"]
+    assert task["status"] == "backlog"
+    authority.context.scopes = ["tasks:write"]
+    with authorization_scope(lambda: authority):
+        with pytest.raises(PermissionError):
+            tools.read_company_source(source["id"], _agno_run_context=context)
+    db.close()
+
+
+def test_company_yaml_rejects_unknown_keys():
+    from pydantic import ValidationError
+
+    from agno.os.config import AgentOSConfig
+
+    with pytest.raises(ValidationError):
+        AgentOSConfig(company={"produts": []})

@@ -28,11 +28,15 @@ def _documents(source: Dict[str, Any]) -> List[Document]:
         raise ValueError("Source root is unavailable")
     workspace = provider.get_tools()[0]
     paths = (source.get("config") or {}).get("paths")
+    explicit = bool(paths) or root.is_file()
+    skipped = []
     if not paths:
         if root.is_file():
             paths = [root.name]
         else:
-            listing = workspace.list_files(recursive=True, max_depth=100)
+            # Source tools authorize sources:read. Reuse Workspace's confined
+            # implementation without also requesting its interactive tool scope.
+            listing = workspace._list_files(".", None, True, 100)
             if listing.startswith("Error"):
                 raise ValueError("Source listing failed")
             paths = [
@@ -43,8 +47,11 @@ def _documents(source: Dict[str, Any]) -> List[Document]:
     documents = []
     reader = MarkdownReader(chunk=False)
     for path in sorted(paths):
-        content = workspace.read_file(path)
+        content = workspace._read_file(path, None, None, "utf-8")
         if content.startswith("Error"):
+            if not explicit and ("file too long" in content or "codec can't decode" in content):
+                skipped.append(path)
+                continue
             raise ValueError("Source read failed")
         # Workspace owns path confinement and exclusions. Remove only its display line numbers.
         content = "\n".join(line.split("\t", 1)[1] for line in content.split("\n") if "\t" in line)
@@ -58,6 +65,8 @@ def _documents(source: Dict[str, Any]) -> List[Document]:
         for document in loaded:
             document.meta_data["url"] = link
         documents.extend(loaded)
+    for document in documents:
+        document.meta_data["skipped_paths"] = skipped
     return documents
 
 
@@ -75,6 +84,7 @@ def read_source(source: Dict[str, Any], run_id: str) -> List[Dict[str, Any]]:
             "content_hash": hash_string_sha256(document.content),
             "link": document.meta_data.get("url") or source["reference"],
             "content": document.content,
+            "skipped_paths": document.meta_data.get("skipped_paths", []),
         }
         for document in documents
     ]
@@ -83,3 +93,21 @@ def read_source(source: Dict[str, Any], run_id: str) -> List[Dict[str, Any]]:
 async def aread_source(source: Dict[str, Any], run_id: str) -> List[Dict[str, Any]]:
     """Offload file/provider reads; native database calls remain async in the manager."""
     return await asyncio.to_thread(read_source, source, run_id)
+
+
+def _proposal_fields(source_id: str, proposal: Any, evidence: List[Dict[str, Any]]) -> Dict[str, Any]:
+    from agno.company.declarations import IntakeProposal
+
+    proposal = IntakeProposal.model_validate(proposal)
+    links = set(proposal.evidence_links)
+    selected = [item for item in evidence if item["link"] in links]
+    if {item["link"] for item in selected} != links:
+        raise ValueError("Proposal evidence must link to documents read from this Source")
+    # A stable issue identity survives edits to the evidence or proposal wording.
+    # The database enforces uniqueness within the Product, including completed Tasks.
+    return {
+        "title": proposal.title,
+        "brief": proposal.brief,
+        "dedupe_key": hash_string_sha256(json.dumps([source_id, proposal.proposal_key])),
+        "evidence": [{k: v for k, v in item.items() if k != "content"} for item in selected],
+    }

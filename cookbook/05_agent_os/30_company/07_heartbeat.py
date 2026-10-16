@@ -2,7 +2,7 @@
 
 Prerequisites: Install agno, sqlalchemy, fastapi, httpx, croniter and pytz.
 Run: .venv/bin/python cookbook/05_agent_os/30_company/07_heartbeat.py
-Try: Edit release.md between scans; the new content creates one new Backlog Task.
+Try: Edit release.md between scans; the same issue still has one Backlog Task.
 """
 
 from pathlib import Path
@@ -55,8 +55,17 @@ if __name__ == "__main__":
                 "/company/sources", params={"product_id": product_id}
             ).json()["data"][0]
             manager = CompanyManager(db)
-            first = manager.intake(source["id"], "first-scan")[0]
-            again = manager.intake(source["id"], "repeat-scan")[0]
+            # Offline stand-in for the reader's decision after inspecting the Source.
+            evidence = manager.read_source(source["id"], "first-scan")
+            proposal = dict(
+                title="Document the new API",
+                brief="Explain the released API with an example.",
+                proposal_key="new-api-docs",
+                evidence_links=[evidence[0]["link"]],
+            )
+            first = manager.intake(source["id"], "first-scan", proposal)
+            release.write_text("# Release\nDocument the new API and its options.\n")
+            again = manager.intake(source["id"], "repeat-scan", proposal)
             assert first["id"] == again["id"]
             assert first["status"] == "backlog"
             routine = client.get("/company/routines").json()["data"][0]

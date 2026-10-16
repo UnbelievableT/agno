@@ -266,7 +266,7 @@ LEARNINGS_TABLE_SCHEMA = {
 
 SOURCES_TABLE_SCHEMA = {
     "id": {"type": String, "primary_key": True},
-    "product_id": {"type": String, "nullable": True, "index": True},
+    "product_id": {"type": String, "nullable": False, "index": True},
     "reference": {"type": Text, "nullable": False},
     "type": {"type": String, "nullable": False},
     "credential_ref": {"type": String, "nullable": True},

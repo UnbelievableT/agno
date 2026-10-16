@@ -5,6 +5,19 @@ import os
 from typing import Any, Sequence
 
 
+def _summary_page(previous: str, run_id: str, report: str):
+    """Keep delivery receipts on one versioned page, including intervening runs."""
+    import re
+
+    from agno.utils.string import hash_string_sha256
+
+    if not run_id:
+        raise ValueError("Summary requires a run id")
+    marker = "\n<!-- Delivered run: " + hash_string_sha256(run_id) + " -->\n"
+    receipts = re.findall(r"\n<!-- Delivered run: [a-f0-9]{64} -->\n", previous)
+    return report + "\n" + "".join(receipts), marker in receipts, marker
+
+
 async def adeliver_summary(interfaces: Sequence[Any], interface_type: str, destination: str, message: str) -> None:
     """Deliver to a human-configured destination; credentials remain inside the interface."""
     interface = next((item for item in interfaces if item.type == interface_type), None)

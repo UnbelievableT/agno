@@ -21,6 +21,13 @@ async def aload_routine_skills() -> Skills:
     return await asyncio.to_thread(load_routine_skills)
 
 
+def _routine_message(product_id: str, instructions: str) -> str:
+    # Run metadata is not automatically visible in the model's messages.
+    import json
+
+    return "Operate only on Product " + json.dumps(product_id) + ".\n\n" + instructions
+
+
 def _schedule_fields(product_id: str, routine: Routine, registry: Any) -> Dict[str, Any]:
     component = getattr(registry, "get_" + routine.executor_type)(routine.executor_id) if registry else None
     if component is None:
@@ -38,7 +45,7 @@ def _schedule_fields(product_id: str, routine: Routine, registry: Any) -> Dict[s
         endpoint=endpoint,
         timezone=routine.timezone,
         payload={
-            "message": routine.instructions or skill.instructions,
+            "message": _routine_message(product_id, routine.instructions or skill.instructions),
             "metadata": {"product_id": product_id, "template": routine.template, "auto_accept": False},
         },
     )
