@@ -25,3 +25,9 @@ Run on 2026-10-16 against `https://ai.topxea.com/v1` with a TopxAI key, model `k
 ### Unit tests
 
 `libs/agno/tests/unit/models/topxai/test_topxai.py`: 7 passed, without network access.
+
+## Catalogue refresh on 2026-10-25
+
+Both cookbook programs now share one event loop for the two async calls, addressing the historical reused-client failure above. A regression test executes both examples with an offline Agent double that requires the same event loop.
+
+The default and cookbook examples now use `kimi-k3.1-pro`, as listed by the live public `/api/pricing` catalogue. The older run above remains a historical `kimi-k3` result; it is not a live test of the new model. The current examples have not been rerun against a paid API in this refresh.

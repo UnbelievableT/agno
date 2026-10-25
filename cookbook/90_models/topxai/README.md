@@ -45,11 +45,11 @@ python cookbook/90_models/topxai/tool_use.py
 
 Text model ids currently served:
 
-- `kimi-k3` (default)
+- `kimi-k3.1-pro` (default)
 - `claude-fable-5-1`, `claude-opus-5-5`, `claude-sonnet-5-5`
 - `gpt-6.1-sol`, `gpt-6-astra`
 - `grok-4.7`
-- `deepseek-v4-pro`, `deepseek-flash`
+- `deepseek-flash-Abliterated`
 - `GLM-5.3-Abliterated`
 
 Each route has a fixed price in USD, paid from prepaid credit. The pricing page lists the

@@ -13,7 +13,7 @@ class Topxai(OpenAILike):
     Chat Completions endpoint.
 
     Attributes:
-        id (str): The id of the TopxAI model to use. Default is "kimi-k3".
+        id (str): The id of the TopxAI model to use. Default is "kimi-k3.1-pro".
         name (str): The name of this chat model instance. Default is "Topxai".
         provider (str): The provider of the model. Default is "Topxai".
         api_key (str): The api key to authorize request to TopxAI.
@@ -21,7 +21,7 @@ class Topxai(OpenAILike):
             Defaults to "https://ai.topxea.com/v1".
     """
 
-    id: str = "kimi-k3"
+    id: str = "kimi-k3.1-pro"
     name: str = "Topxai"
     provider: str = "Topxai"
     api_key: Optional[str] = field(default_factory=lambda: getenv("TOPXAI_API_KEY"))

@@ -16,14 +16,23 @@ from agno.tools.websearch import WebSearchTools
 # ---------------------------------------------------------------------------
 
 agent = Agent(
-    model=Topxai(id="kimi-k3"),
+    model=Topxai(id="kimi-k3.1-pro"),
     tools=[WebSearchTools()],
     markdown=True,
 )
 
+
 # ---------------------------------------------------------------------------
 # Run Agent
 # ---------------------------------------------------------------------------
+async def run_async_examples():
+    await agent.aprint_response("What is the latest price about BTCUSDT on Binance?")
+    await agent.aprint_response(
+        "Search for the latest developments in quantum computing and summarize them",
+        stream=True,
+    )
+
+
 if __name__ == "__main__":
     # --- Sync ---
     agent.print_response("What's the latest news about AI?")
@@ -31,15 +40,5 @@ if __name__ == "__main__":
     # --- Sync + Streaming ---
     agent.print_response("What's the current weather in Tokyo?", stream=True)
 
-    # --- Async ---
-    asyncio.run(
-        agent.aprint_response("What is the latest price about BTCUSDT on Binance?")
-    )
-
-    # --- Async + Streaming ---
-    asyncio.run(
-        agent.aprint_response(
-            "Search for the latest developments in quantum computing and summarize them",
-            stream=True,
-        )
-    )
+    # Share one event loop for the model's reusable async client.
+    asyncio.run(run_async_examples())

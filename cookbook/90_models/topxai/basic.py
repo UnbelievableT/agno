@@ -14,14 +14,22 @@ from agno.models.topxai import Topxai
 # Create Agent
 # ---------------------------------------------------------------------------
 
-agent = Agent(model=Topxai(id="kimi-k3"), markdown=True)
+agent = Agent(model=Topxai(id="kimi-k3.1-pro"), markdown=True)
 
 # You can also select the provider by string, which resolves to the same class:
-# agent = Agent(model="topxai:kimi-k3", markdown=True)
+# agent = Agent(model="topxai:kimi-k3.1-pro", markdown=True)
+
 
 # ---------------------------------------------------------------------------
 # Run Agent
 # ---------------------------------------------------------------------------
+async def run_async_examples():
+    await agent.aprint_response("Share a 2 sentence horror story")
+    await agent.aprint_response(
+        "Write a short poem about artificial intelligence", stream=True
+    )
+
+
 if __name__ == "__main__":
     # --- Sync ---
     agent.print_response("Explain quantum computing in simple terms")
@@ -29,12 +37,5 @@ if __name__ == "__main__":
     # --- Sync + Streaming ---
     agent.print_response("Explain quantum computing in simple terms", stream=True)
 
-    # --- Async ---
-    asyncio.run(agent.aprint_response("Share a 2 sentence horror story"))
-
-    # --- Async + Streaming ---
-    asyncio.run(
-        agent.aprint_response(
-            "Write a short poem about artificial intelligence", stream=True
-        )
-    )
+    # Share one event loop for the model's reusable async client.
+    asyncio.run(run_async_examples())
