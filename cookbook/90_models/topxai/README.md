@@ -46,7 +46,7 @@ python cookbook/90_models/topxai/tool_use.py
 Text model ids currently served:
 
 - `kimi-k3.1-pro` (default)
-- `claude-fable-5-1`, `claude-opus-5-5`, `claude-sonnet-5-5`
+- `claude-fable-5-2`, `claude-opus-5-5`, `claude-sonnet-5-5`
 - `gpt-6.1-sol`, `gpt-6-astra`
 - `grok-4.7`
 - `deepseek-flash-Abliterated`
